@@ -4,7 +4,10 @@ export default function ListingDetailModal({ isOpen, onClose, listing, onDonate 
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="absolute inset-0 flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-white rounded-lg shadow-xl p-6 space-y-4">
+        <div
+          className="w-full max-w-md bg-white rounded-lg shadow-xl p-6 space-y-4"
+          onClick={e => e.stopPropagation()}
+        >
           <div className="text-lg font-semibold">{listing.name}</div>
           <div className="text-sm text-gray-600">ID: {listing.id}</div>
           <div className="flex justify-end gap-2 pt-2">
