@@ -1,74 +1,69 @@
 from fastapi import APIRouter
 from models.item import Item
+from db.firestore_client import db
 
 router = APIRouter(prefix="/items", tags=["Items"])
 
-# In-memory DB
-fake_items_db = {}
-
-# These will be linked from main.py
-fake_tourists_db = {}
-fake_businesses_db = {}
-
 @router.post("/")
-def add_item(item: Item):
-    """
-    Add a new item (dropoff by tourist or business)
-    """
-    item.status = "available"
-    fake_items_db[item.qr_code_id] = item
-    return {"message": "Item added", "item": item}
+def create_item(item: Item):
+    doc_ref = db.collection("items").document(item.qr_code_id)
+    doc_ref.set(item.model_dump())  # Pydantic v2
+    return {"message": "Item created", "item": item}
 
 @router.get("/")
 def list_items():
-    return list(fake_items_db.values())
+    return [doc.to_dict() for doc in db.collection("items").stream()]
 
 @router.get("/{qr_code_id}")
 def get_item(qr_code_id: str):
-    item = fake_items_db.get(qr_code_id)
-    if not item:
+    doc = db.collection("items").document(qr_code_id).get()
+    if not doc.exists:
         return {"error": "Item not found"}
-    return item
+    return doc.to_dict()
 
-@router.post("/pickup/{qr_code_id}")
+# --- Pickup/Dropoff endpoints ---
+
+@router.post("/pickup/{qr_code_id}/{tourist_email}")
 def pickup_item(qr_code_id: str, tourist_email: str):
-    """
-    Tourist picks up an item (spends points)
-    """
-    item = fake_items_db.get(qr_code_id)
-    tourist = fake_tourists_db.get(tourist_email)
-
-    if not item:
-        return {"error": "Item not found"}
-    if not tourist:
+    tourist_doc = db.collection("tourists").document(tourist_email).get()
+    if not tourist_doc.exists:
         return {"error": "Tourist not found"}
-    if item.status != "available":
-        return {"error": "Item is currently unavailable"}
+    tourist = tourist_doc.to_dict()
+
+    item_doc = db.collection("items").document(qr_code_id).get()
+    if not item_doc.exists:
+        return {"error": "Item not found"}
+    item = item_doc.to_dict()
 
     cost = 5
-    if tourist.points < cost:
-        return {"error": f"Not enough points. You need {cost} points to pick up this item."}
+    if tourist["points"] < cost:
+        return {"error": "Not enough points to pick up item"}
 
-    tourist.points -= cost
-    item.owner_email = tourist_email
-    item.status = "unavailable"
-    return {"message": f"{tourist.username} picked up {item.name} (-{cost} points)", "item": item, "tourist": tourist}
+    db.collection("tourists").document(tourist_email).update({"points": tourist["points"] - cost})
+    db.collection("items").document(qr_code_id).update({"status": "unavailable", "owner_email": tourist_email})
 
-@router.post("/dropoff/{qr_code_id}")
+    return {"message": f"{tourist_email} picked up {qr_code_id}", "remaining_points": tourist["points"] - cost}
+
+@router.post("/dropoff/{qr_code_id}/{business_email}")
 def dropoff_item(qr_code_id: str, business_email: str):
-    """
-    Tourist drops off item at a business (gains points)
-    """
-    item = fake_items_db.get(qr_code_id)
-    business = fake_businesses_db.get(business_email)
-
-    if not item:
-        return {"error": "Item not found"}
-    if not business:
+    business_doc = db.collection("businesses").document(business_email).get()
+    if not business_doc.exists:
         return {"error": "Business not found"}
+    business = business_doc.to_dict()
 
-    reward = 10
-    business.points += reward
-    item.owner_email = business_email
-    item.status = "available"
-    return {"message": f"{item.name} dropped off at {business.name} (+{reward} points)", "item": item, "business": business}
+    item_doc = db.collection("items").document(qr_code_id).get()
+    if not item_doc.exists:
+        return {"error": "Item not found"}
+    item = item_doc.to_dict()
+
+    owner_email = item.get("owner_email")
+    if owner_email:
+        owner_doc = db.collection("tourists").document(owner_email).get()
+        if owner_doc.exists:
+            points_awarded = 10
+            new_points = owner_doc.to_dict()["points"] + points_awarded
+            db.collection("tourists").document(owner_email).update({"points": new_points})
+
+    db.collection("items").document(qr_code_id).update({"status": "available", "owner_email": business_email})
+
+    return {"message": f"{qr_code_id} dropped off at {business_email}"}

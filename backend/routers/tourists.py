@@ -1,23 +1,25 @@
 from fastapi import APIRouter
 from models.tourist import Tourist
+from db.firestore_client import db
 
 router = APIRouter(prefix="/tourists", tags=["Tourists"])
 
-# In-memory DB
-fake_tourists_db = {}
+
 
 @router.post("/")
 def create_tourist(tourist: Tourist):
-    fake_tourists_db[tourist.email] = tourist
+    doc_ref = db.collection("tourists").document(tourist.email)
+    doc_ref.set(tourist.model_dump()) 
     return {"message": "Tourist created", "tourist": tourist}
 
 @router.get("/")
 def list_tourists():
-    return list(fake_tourists_db.values())
+    docs = db.collection("tourists").stream()
+    return [doc.to_dict() for doc in docs]
 
 @router.get("/{email}")
 def get_tourist(email: str):
-    tourist = fake_tourists_db.get(email)
-    if not tourist:
+    doc = db.collection("tourists").document(email).get()
+    if not doc.exists:
         return {"error": "Tourist not found"}
-    return tourist
+    return doc.to_dict()

@@ -8,6 +8,4 @@ app.include_router(tourists.router)
 app.include_router(businesses.router)
 app.include_router(items.router)
 
-# Link shared DBs
-items.fake_tourists_db = tourists.fake_tourists_db
-items.fake_businesses_db = businesses.fake_businesses_db
+
