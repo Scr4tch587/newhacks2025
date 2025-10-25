@@ -1,7 +1,6 @@
 from pydantic import BaseModel, EmailStr
 
-class User(BaseModel):
-    username: str
+class Business(BaseModel):
+    name: str
     email: EmailStr
-    role: str  # "tourist" or "business"
     points: int = 0

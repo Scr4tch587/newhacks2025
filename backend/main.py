@@ -1,11 +1,13 @@
 from fastapi import FastAPI
-from routers import users, items
+from routers import tourists, businesses, items
 
 app = FastAPI(title="NewHacks2025 Backend")
 
-app.include_router(users.router)
+# Include routers
+app.include_router(tourists.router)
+app.include_router(businesses.router)
 app.include_router(items.router)
 
-@app.get("/")
-def root():
-    return {"message": "Hello from NewHacks2025 backend"}
+# Link shared DBs
+items.fake_tourists_db = tourists.fake_tourists_db
+items.fake_businesses_db = businesses.fake_businesses_db
