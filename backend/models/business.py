@@ -4,3 +4,4 @@ class Business(BaseModel):
     name: str
     email: EmailStr
     points: int = 0
+    address: str
