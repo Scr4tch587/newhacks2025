@@ -16,7 +16,10 @@ export default function Navbar() {
           {user ? (
             <button className="px-3 py-1.5 rounded bg-gray-900 text-white hover:bg-black">Logout</button>
           ) : (
-            <button className="px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-700">Login</button>
+            <Link to="/login" className="px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-700">
+              Login
+            </Link>
+
           )}
         </div>
       </div>
