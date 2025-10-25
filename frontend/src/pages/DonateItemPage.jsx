@@ -1,18 +1,19 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Html5QrcodeScanner } from 'html5-qrcode'
-import { fetchProductByQRCode, mockDropoffLocations, getAvailableTimeSlots, getAvailableDates } from '../utils/DonationAPI'
+import { fetchProductByQRCode, getAvailableTimeSlots, getAvailableDates } from '../utils/DonationAPI'
+import { getNearbyBusinesses } from '../utils/FastAPIClient'
 
 export default function DonateItemPage() {
   const navigate = useNavigate()
-  
-  // Step tracking
-  const [step, setStep] = useState('scan') // 'scan', 'form', 'success'
-  
+
+  // Steps: 'scan' | 'form' | 'success'
+  const [step, setStep] = useState('scan')
+
   // QR scan results
   const [qrCodeId, setQrCodeId] = useState(null)
   const [productInfo, setProductInfo] = useState(null)
-  
+
   // Form data
   const [form, setForm] = useState({
     description: '',
@@ -21,50 +22,39 @@ export default function DonateItemPage() {
     date: '',
     timeSlot: ''
   })
-  
-  // Available options
+
+  // Options
   const [availableTimeSlots, setAvailableTimeSlots] = useState([])
+  const [address, setAddress] = useState('')
+  const [locations, setLocations] = useState([])
+  const [loadingLocations, setLoadingLocations] = useState(false)
   const availableDates = getAvailableDates()
   const scannerRef = useRef(null)
 
-  // Camera permission prompt state (move here)
-  const [cameraPromptVisible, setCameraPromptVisible] = useState(false)
+  // Optional prompt state (not strictly needed but kept for UX)
+  const [cameraPromptVisible] = useState(false)
 
   // Initialize QR scanner
   useEffect(() => {
     if (step === 'scan' && !scannerRef.current) {
       const scanner = new Html5QrcodeScanner(
         'qr-reader',
-        { 
-          fps: 10, 
-          qrbox: { width: 250, height: 250 },
-          aspectRatio: 1.0
-        },
+        { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 },
         false
       )
-
       scanner.render(
         async (decodedText) => {
-          // Successfully scanned
           setQrCodeId(decodedText)
-          
-          // Fetch product info
           const product = await fetchProductByQRCode(decodedText)
           setProductInfo(product)
-          
-          // Clean up scanner and move to form
-          scanner.clear()
+          await scanner.clear()
           scannerRef.current = null
           setStep('form')
         },
-        (error) => {
-          // Scan error (ignore most errors, they're normal)
-        }
+        () => {}
       )
-
       scannerRef.current = scanner
     }
-
     return () => {
       if (scannerRef.current) {
         scannerRef.current.clear().catch(() => {})
@@ -82,49 +72,54 @@ export default function DonateItemPage() {
     }
   }, [form.dropoffLocation])
 
-  // Inject custom style for html5-qrcode camera permission button
+  // Fetch nearby businesses by address (debounced)
   useEffect(() => {
-    if (step === 'scan') {
-      const style = document.createElement('style')
-      style.innerHTML = `
-        .html5-qrcode-button-camera-permission,
-        button[aria-label*='camera permission'],
-        button:contains('Request camera permissions'),
-        .html5-qrcode-camera-permission {
-          background: #6366f1 !important;
-          color: #fff !important;
-          font-size: 1.25rem !important;
-          font-weight: 600 !important;
-          border-radius: 0.5rem !important;
-          padding: 0.75rem 2rem !important;
-          margin: 1.5rem auto !important;
-          display: block !important;
-          box-shadow: 0 2px 8px rgba(99,102,241,0.15);
-          border: none !important;
-          cursor: pointer !important;
-          transition: background 0.2s;
-          text-align: center !important;
-        }
-        .html5-qrcode-button-camera-permission:hover,
-        button[aria-label*='camera permission']:hover,
-        .html5-qrcode-camera-permission:hover {
-          background: #4338ca !important;
-        }
-        /* Style any span or a tag with the text as a fallback */
-        #qr-reader span, #qr-reader a {
-          font-size: 1.25rem !important;
-          font-weight: 600 !important;
-          color: #6366f1 !important;
-          text-decoration: underline !important;
-          cursor: pointer !important;
-          display: block !important;
-          margin: 1.5rem auto !important;
-          text-align: center !important;
-        }
-      `
-      document.head.appendChild(style)
-      return () => { document.head.removeChild(style) }
+    if (!address || address.trim().length < 4) {
+      setLocations([])
+      return
     }
+    const t = setTimeout(async () => {
+      try {
+        setLoadingLocations(true)
+        const data = await getNearbyBusinesses(address)
+        setLocations(Array.isArray(data) ? data : [])
+      } catch (e) {
+        console.error('Failed to load nearby businesses', e)
+        setLocations([])
+      } finally {
+        setLoadingLocations(false)
+      }
+    }, 500)
+    return () => clearTimeout(t)
+  }, [address])
+
+  // Slightly nicer style for the camera permission button
+  useEffect(() => {
+    if (step !== 'scan') return
+    const style = document.createElement('style')
+    style.innerHTML = `
+      .html5-qrcode-button-camera-permission,
+      button[aria-label*='camera permission'],
+      .html5-qrcode-camera-permission {
+        background: #6366f1 !important;
+        color: #fff !important;
+        font-size: 1.1rem !important;
+        font-weight: 600 !important;
+        border-radius: 0.5rem !important;
+        padding: 0.65rem 1.5rem !important;
+        margin: 1rem auto !important;
+        display: block !important;
+        box-shadow: 0 2px 8px rgba(99,102,241,0.15);
+        border: none !important;
+        cursor: pointer !important;
+      }
+      .html5-qrcode-button-camera-permission:hover,
+      button[aria-label*='camera permission']:hover {
+        background: #4338ca !important;
+      }
+    `
+    document.head.appendChild(style)
+    return () => document.head.removeChild(style)
   }, [step])
 
   const handleChange = (e) => {
@@ -134,38 +129,26 @@ export default function DonateItemPage() {
 
   const handlePhotoChange = (e) => {
     const file = e.target.files[0]
-    if (file) {
-      // Validate image format
-      const validFormats = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
-      if (!validFormats.includes(file.type)) {
-        alert('Please upload a valid image file (JPEG, PNG, or WebP)')
-        e.target.value = ''
-        return
-      }
-      setForm(f => ({ ...f, photo: file }))
+    if (!file) return
+    const validFormats = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
+    if (!validFormats.includes(file.type)) {
+      alert('Please upload a valid image file (JPEG, PNG, or WebP)')
+      e.target.value = ''
+      return
     }
+    setForm(f => ({ ...f, photo: file }))
   }
 
   const submit = async (e) => {
     e.preventDefault()
-    
-    // Validate all fields
     if (!form.description || !form.photo || !form.dropoffLocation || !form.date || !form.timeSlot) {
       alert('Please fill in all fields')
       return
     }
-
-    // TODO: Replace with real API call
-    console.log('Submitting donation:', {
-      qrCodeId,
-      productInfo,
-      ...form
-    })
-
+    console.log('Submitting donation:', { qrCodeId, productInfo, ...form })
     setStep('success')
   }
 
-  // Render QR Scanner
   if (step === 'scan') {
     return (
       <div className="max-w-lg mx-auto mt-10 bg-white rounded-lg shadow-xl p-6 space-y-4">
@@ -175,7 +158,7 @@ export default function DonateItemPage() {
         </div>
         {cameraPromptVisible && (
           <button
-            onClick={handleCustomCameraPrompt}
+            onClick={() => {}}
             className="w-full px-4 py-3 rounded-lg bg-indigo-600 text-white font-semibold text-lg mb-4 hover:bg-indigo-700 transition"
           >
             Enable Camera
@@ -192,14 +175,13 @@ export default function DonateItemPage() {
     )
   }
 
-  // Render Success Message
   if (step === 'success') {
     return (
       <div className="max-w-lg mx-auto mt-10 bg-white rounded-lg shadow-xl p-8 space-y-4 text-center">
         <div className="text-6xl mb-4">🎉</div>
         <h1 className="text-2xl font-semibold text-gray-800">Donation Submitted!</h1>
         <p className="text-gray-700 text-lg">
-          Thank you for giving your <span className="font-semibold text-indigo-600">'{productInfo?.productName}'</span> a second life! 
+          Thank you for giving your <span className="font-semibold text-indigo-600">'{productInfo?.productName}'</span> a second life!
           When a new owner is found, points will be awarded to your account!
         </p>
         <div className="pt-4">
@@ -214,13 +196,12 @@ export default function DonateItemPage() {
     )
   }
 
-  // Render Form
   return (
     <div className="max-w-lg mx-auto mt-10 bg-white rounded-lg shadow-xl p-6 space-y-4">
       <div>
         <h1 className="text-2xl font-semibold">Donate Your Item</h1>
         <p className="text-sm text-gray-600 mt-1">
-          Product: <span className="font-medium">{productInfo?.productName}</span> 
+          Product: <span className="font-medium">{productInfo?.productName}</span>
           {' '}(ID: {productInfo?.productId})
         </p>
       </div>
@@ -253,6 +234,19 @@ export default function DonateItemPage() {
         </div>
 
         <div>
+          <label className="block text-sm font-medium mb-1">Your Address *</label>
+          <input
+            type="text"
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            className="w-full border rounded px-3 py-2"
+            placeholder="e.g. 123 Main St, Toronto, ON"
+            required
+          />
+          <p className="text-xs text-gray-500 mt-1">We'll use this to sort drop-off locations by distance.</p>
+        </div>
+
+        <div>
           <label className="block text-sm font-medium mb-1">Drop-off Location *</label>
           <select
             name="dropoffLocation"
@@ -262,9 +256,10 @@ export default function DonateItemPage() {
             required
           >
             <option value="">Select a location</option>
-            {mockDropoffLocations.map(loc => (
+            {loadingLocations && <option value="" disabled>Loading nearby locations…</option>}
+            {!loadingLocations && locations.map(loc => (
               <option key={loc.id} value={loc.id}>
-                {loc.name} - {loc.address}
+                {loc.name} - {loc.address} ({loc.distance_km} km)
               </option>
             ))}
           </select>

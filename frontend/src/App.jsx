@@ -3,7 +3,7 @@ import Navbar from './components/Navbar'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import PointsPage from './pages/PointsPage'
-import DonateItemPage from './pages/DonateItemPage'
+import DonateItemPage from './pages/DonateItemPageClean'
 import SignupPage from './pages/SignupPage'
 
 

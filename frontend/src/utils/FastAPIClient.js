@@ -25,4 +25,10 @@ export async function redeemReward(uid, rewardId) {
   return data
 }
 
+export async function getNearbyBusinesses(address, limit = 20) {
+  if (!address || !address.trim()) return []
+  const { data } = await api.get('/businesses/nearby', { params: { address, limit } })
+  return data
+}
+
 export default api
