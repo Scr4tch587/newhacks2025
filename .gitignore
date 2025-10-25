@@ -212,4 +212,4 @@ __marimo__/
 /sdk-blockchain/dist
 
 #firebasekey
-backend/firebasekey.json
+backend/serviceAccountKey.json
