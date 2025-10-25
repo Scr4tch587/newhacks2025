@@ -26,6 +26,9 @@ export default function DonateItemPage() {
   // Options
   const [availableTimeSlots, setAvailableTimeSlots] = useState([])
   const [address, setAddress] = useState('')
+  const [selectedAddress, setSelectedAddress] = useState(null)
+  const [suggestions, setSuggestions] = useState([])
+  const [suggestionLoading, setSuggestionLoading] = useState(false)
   const [locations, setLocations] = useState([])
   const [loadingLocations, setLoadingLocations] = useState(false)
   const availableDates = getAvailableDates()
@@ -72,26 +75,58 @@ export default function DonateItemPage() {
     }
   }, [form.dropoffLocation])
 
-  // Fetch nearby businesses by address (debounced)
+  // Address autocomplete (Nominatim) and nearby lookup
   useEffect(() => {
-    if (!address || address.trim().length < 4) {
+    // when the user types, clear previously selected address
+    setSelectedAddress(null)
+    if (!address || address.trim().length < 3) {
+      setSuggestions([])
+      return
+    }
+
+    const t = setTimeout(async () => {
+      try {
+        setSuggestionLoading(true)
+        const q = encodeURIComponent(address)
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${q}`)
+        if (!res.ok) throw new Error('Failed to fetch address suggestions')
+        const json = await res.json()
+        setSuggestions(Array.isArray(json) ? json : [])
+      } catch (e) {
+        console.error('Address suggestions failed', e)
+        setSuggestions([])
+      } finally {
+        setSuggestionLoading(false)
+      }
+    }, 300)
+
+    return () => clearTimeout(t)
+  }, [address])
+
+  // When an address is explicitly selected, load nearby businesses
+  useEffect(() => {
+    if (!selectedAddress) {
       setLocations([])
       return
     }
-    const t = setTimeout(async () => {
+
+    let cancelled = false
+    ;(async () => {
       try {
         setLoadingLocations(true)
-        const data = await getNearbyBusinesses(address)
-        setLocations(Array.isArray(data) ? data : [])
+        const data = await getNearbyBusinesses(selectedAddress.display_name)
+        if (!cancelled) setLocations(Array.isArray(data) ? data : [])
       } catch (e) {
         console.error('Failed to load nearby businesses', e)
-        setLocations([])
+        if (!cancelled) setLocations([])
       } finally {
-        setLoadingLocations(false)
+        if (!cancelled) setLoadingLocations(false)
       }
-    }, 500)
-    return () => clearTimeout(t)
-  }, [address])
+    })()
+
+    return () => { cancelled = true }
+  }, [selectedAddress])
+
 
   // Slightly nicer style for the camera permission button
   useEffect(() => {
@@ -127,6 +162,16 @@ export default function DonateItemPage() {
     setForm(f => ({ ...f, [name]: value }))
   }
 
+  const handleAddressChange = (e) => {
+    setAddress(e.target.value)
+  }
+
+  const handleSelectSuggestion = (s) => {
+    setAddress(s.display_name)
+    setSelectedAddress(s)
+    setSuggestions([])
+  }
+
   const handlePhotoChange = (e) => {
     const file = e.target.files[0]
     if (!file) return
@@ -143,6 +188,10 @@ export default function DonateItemPage() {
     e.preventDefault()
     if (!form.description || !form.photo || !form.dropoffLocation || !form.date || !form.timeSlot) {
       alert('Please fill in all fields')
+      return
+    }
+    if (!selectedAddress) {
+      alert('Please select an address from the suggestions before continuing')
       return
     }
     console.log('Submitting donation:', { qrCodeId, productInfo, ...form })
@@ -233,17 +282,34 @@ export default function DonateItemPage() {
           )}
         </div>
 
-        <div>
+        <div className="relative">
           <label className="block text-sm font-medium mb-1">Your Address *</label>
           <input
             type="text"
             value={address}
-            onChange={(e) => setAddress(e.target.value)}
+            onChange={handleAddressChange}
             className="w-full border rounded px-3 py-2"
             placeholder="e.g. 123 Main St, Toronto, ON"
+            aria-autocomplete="list"
             required
           />
-          <p className="text-xs text-gray-500 mt-1">We'll use this to sort drop-off locations by distance.</p>
+          <p className="text-xs text-gray-500 mt-1">Select an address from the suggestions to enable nearby drop-off locations.</p>
+
+          {/* Suggestions dropdown */}
+          {suggestions.length > 0 && (
+            <ul className="absolute z-20 left-0 right-0 mt-1 bg-white border rounded shadow max-h-48 overflow-auto">
+              {suggestions.map((s) => (
+                <li
+                  key={`${s.place_id}`}
+                  onClick={() => handleSelectSuggestion(s)}
+                  className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                >
+                  {s.display_name}
+                </li>
+              ))}
+            </ul>
+          )}
+          {suggestionLoading && <div className="text-xs text-gray-500 mt-1">Looking up addresses…</div>}
         </div>
 
         <div>
@@ -253,11 +319,12 @@ export default function DonateItemPage() {
             value={form.dropoffLocation}
             onChange={handleChange}
             className="w-full border rounded px-3 py-2"
+            disabled={!selectedAddress}
             required
           >
-            <option value="">Select a location</option>
-            {loadingLocations && <option value="" disabled>Loading nearby locations…</option>}
-            {!loadingLocations && locations.map(loc => (
+            <option value="">{selectedAddress ? 'Select a location' : 'Select an address first'}</option>
+            {selectedAddress && loadingLocations && <option value="" disabled>Loading nearby locations…</option>}
+            {selectedAddress && !loadingLocations && locations.map(loc => (
               <option key={loc.id} value={loc.id}>
                 {loc.name} - {loc.address} ({loc.distance_km} km)
               </option>

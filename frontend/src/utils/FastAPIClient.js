@@ -27,6 +27,7 @@ export async function redeemReward(uid, rewardId) {
 
 export async function getNearbyBusinesses(address, limit = 20) {
   if (!address || !address.trim()) return []
+  // The backend exposes a dedicated nearby endpoint that returns distance_km and id
   const { data } = await api.get('/businesses/nearby', { params: { address, limit } })
   return data
 }
