@@ -210,3 +210,6 @@ __marimo__/
 /chain/artifacts
 /chain/cache
 /sdk-blockchain/dist
+
+#firebasekey
+backend/firebasekey.json
