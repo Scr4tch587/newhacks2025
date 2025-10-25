@@ -3,6 +3,8 @@ import Navbar from './components/Navbar'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import PointsPage from './pages/PointsPage'
+import SignupPage from './pages/SignupPage'
+
 
 function App() {
   return (
@@ -14,6 +16,7 @@ function App() {
         <Route path="/points" element={<PointsPage />} />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/signup" element={<SignupPage />} />
       </Routes>
     </div>
   )
