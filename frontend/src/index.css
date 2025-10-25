@@ -1,1 +1,31 @@
 @import "tailwindcss";
+
+/* === Shine Animation for Progress Bar === */
+@keyframes shine {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* === Optional: Smooth Parallax Layer Transitions === */
+.parallax-layer {
+  will-change: transform;
+  transition: transform 0.1s linear;
+}
+
+/* === Floating "bob" effect (if you add clouds, planes, etc later) === */
+@keyframes bob {
+  0%   { transform: translateY(0); }
+  50%  { transform: translateY(-6px); }
+  100% { transform: translateY(0); }
+}
+
+/* === Prevent animations if user prefers reduced motion === */
+@media (prefers-reduced-motion: reduce) {
+  .parallax-layer {
+    transition: none !important;
+  }
+  .animate-[shine_2s_infinite],
+  .animate-[bob_6s_ease-in-out_infinite] {
+    animation: none !important;
+  }
+}
