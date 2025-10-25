@@ -13,9 +13,8 @@ export default function DonateItemModal({ isOpen, onClose, onSubmit }) {
 
   return (
     <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="absolute inset-0 flex items-center justify-center p-4">
-        <div className="w-full max-w-lg bg-white rounded-lg shadow-xl p-6 space-y-4">
+      <div className="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
+        <div className="w-full max-w-lg bg-white rounded-lg shadow-xl p-6 space-y-4 pointer-events-auto">
           <div className="text-lg font-semibold">Donate an Item</div>
           <form onSubmit={submit} className="space-y-3">
             <div>

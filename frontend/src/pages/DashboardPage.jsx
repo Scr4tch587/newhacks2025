@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import MapComponent from '../components/MapComponent'
 import MapSidebar from '../components/MapSidebar'
 import ListingDetailModal from '../components/ListingDetailModal'
-import DonateItemModal from '../components/DonateItemModal'
 import { fetchItems, fetchOwnerLocation } from '../utils/FakeAPI'
 
 export default function DashboardPage() {
   const [listings, setListings] = useState([])
   const [selected, setSelected] = useState(null)
-  const [showDonate, setShowDonate] = useState(false)
   const [origin, setOrigin] = useState({ lat: 43.653, lng: -79.383 })
+  const navigate = useNavigate()
 
   useEffect(() => {
     // Helper to compute Haversine distance in km
@@ -63,15 +63,11 @@ export default function DashboardPage() {
     })()
   }, [])
 
-  const submitDonation = async (form) => {
-    alert('Mock: Donation submitted!')
-  }
-
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-4">
       <div className="flex justify-between items-center">
         <h1 className="text-xl font-semibold">Nearby Listings</h1>
-        <button className="px-4 py-2 rounded bg-indigo-600 text-white" onClick={() => setShowDonate(true)}>Donate Item</button>
+        <button className="px-4 py-2 rounded bg-indigo-600 text-white" onClick={() => navigate('/donate')}>Donate Item</button>
       </div>
       <div className="flex h-[70vh] rounded-lg overflow-hidden border border-gray-200">
         <MapSidebar listings={listings} onSelectListing={setSelected} />
@@ -80,8 +76,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <ListingDetailModal isOpen={!!selected} listing={selected} onClose={() => setSelected(null)} onDonate={() => setShowDonate(true)} />
-      <DonateItemModal isOpen={showDonate} onClose={() => setShowDonate(false)} onSubmit={submitDonation} />
+      <ListingDetailModal isOpen={!!selected} listing={selected} onClose={() => setSelected(null)} onDonate={() => navigate('/donate')} />
     </div>
   )
 }
