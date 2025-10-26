@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchBusinessListings } from '../utils/BusinessFakeAPI'
-import { getBusinessTransactions } from '../utils/FastAPIClient'
+import { getBusinessTransactions, getHeldItemsByEmail } from '../utils/FastAPIClient'
 import { useAuth } from '../contexts/AuthContext'
 
 function ListingCard({ l }) {
@@ -9,14 +8,16 @@ function ListingCard({ l }) {
       <div className="flex justify-between items-start">
         <div>
           <h3 className="font-semibold">{l.name}</h3>
-          <p className="text-sm text-gray-600">{l.description}</p>
+          {l.description && <p className="text-sm text-gray-600">{l.description}</p>}
         </div>
         <div className="text-right">
-          <div className="text-sm">Qty: <span className="font-medium">{l.quantity}</span></div>
-          <div className={`mt-2 px-2 py-1 rounded text-xs ${l.status === 'available' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{l.status}</div>
+          {l.qr_code_id && <div className="text-xs text-gray-500">ID: {l.qr_code_id}</div>}
+          <div className={`mt-2 px-2 py-1 rounded text-xs ${l.status === 'available' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{l.status || 'unknown'}</div>
         </div>
       </div>
-      <div className="mt-2 text-xs text-gray-500">Last checked: {new Date(l.last_checked_in).toLocaleString()}</div>
+      {l.created_at && (
+        <div className="mt-2 text-xs text-gray-500">Created: {new Date(l.created_at).toLocaleString()}</div>
+      )}
     </div>
   )
 }
@@ -65,7 +66,7 @@ useEffect(() => {
       console.log('Fetched ID token:', idToken)
 
       const [ls, tx] = await Promise.all([
-        fetchBusinessListings({ owner_email: user.email || "owner@example.com" }),
+        getHeldItemsByEmail(user.email || ''),
         getBusinessTransactions(user.uid || 'loc-main', idToken),
       ])
 
@@ -93,7 +94,7 @@ useEffect(() => {
         <h2 className="text-lg font-medium mb-3">Your Listings</h2>
         <div className="space-y-3">
           {loading ? <div className="text-gray-500">Loading listings…</div> : (
-            listings.map((l) => <ListingCard key={l.id} l={l} />)
+            listings.map((l) => <ListingCard key={l.qr_code_id || l.id || l.name} l={l} />)
           )}
         </div>
       </div>

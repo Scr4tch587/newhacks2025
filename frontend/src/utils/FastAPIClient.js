@@ -46,6 +46,19 @@ export async function getBusinessTransactions(uid) {
   return data
 }
 
+export async function getHeldItemsByEmail(email) {
+  if (!email) return []
+  try {
+    const { data } = await api.get(`/businesses/items/${encodeURIComponent(email)}`)
+    // Endpoint returns { business_email, items }
+    return Array.isArray(data?.items) ? data.items : []
+  } catch (e) {
+    // If 404 (no items), treat as empty list
+    if (e?.response?.status === 404) return []
+    throw e
+  }
+}
+
 export async function getNearbyItems({ address, lat, lng, limit = 50 } = {}) {
   // Accept either address or lat/lng. Return [] if none provided.
   if ((!address || !address.trim()) && (lat == null || lng == null)) return []

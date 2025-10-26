@@ -299,7 +299,6 @@ async def create_retail_profile(
     db.collection("retail_profiles").document(store_id).set(data)
     return {"message": "Retail profile created successfully", "store_id": store_id, "profile": data}
 
-
 @router.delete("/profile/{store_id}")
 def delete_retail_profile(store_id: str, logged_in_uid: str = Depends(verify_token)):
     doc_ref = db.collection("retail_profiles").document(store_id)
