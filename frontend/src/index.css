@@ -29,3 +29,22 @@
     animation: none !important;
   }
 }
+
+@keyframes fadeTrail {
+  0% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  70% {
+    opacity: 0.3;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
+.animate-fadeTrail {
+  animation: fadeTrail 3s forwards;
+}
