@@ -21,13 +21,16 @@ export default function Navbar() {
   <Link to="/" className="text-xl font-semibold">Waypost</Link>
         <div className="flex items-center gap-4">
           {role === 'business' ? (
+            // Business users: only show Business Dashboard in nav
             <Link to="/business-dashboard" className="text-gray-700 hover:text-black">Business Dashboard</Link>
           ) : (
-            <Link to="/dashboard" className="text-gray-700 hover:text-black">Dashboard</Link>
-          )}
-          <Link to="/points" className="text-gray-700 hover:text-black">Points</Link>
-          {role === 'tourist' && (
-            <Link to="/donate" className="text-gray-700 hover:text-black">Donate Item</Link>
+            <>
+              <Link to="/dashboard" className="text-gray-700 hover:text-black">Dashboard</Link>
+              <Link to="/points" className="text-gray-700 hover:text-black">Points</Link>
+              {role === 'tourist' && (
+                <Link to="/donate" className="text-gray-700 hover:text-black">Donate Item</Link>
+              )}
+            </>
           )}
           {user ? (
             <>
