@@ -325,3 +325,21 @@ def _geocode_address(address: str) -> Optional[Dict[str, float]]:
     except Exception:
         return None
     
+@router.get("/items/{email}")
+def get_held_items(email: str):
+    """
+    Get all items currently owned by a business.
+    """
+    try:
+        # Query Firestore for items with matching owner_email
+        docs = db.collection("items").where("owner_email", "==", email).stream()
+        results = [doc.to_dict() for doc in docs]
+
+        if not results:
+            raise HTTPException(status_code=404, detail="No items found for this business")
+
+        return {"business_email": email, "items": results}
+
+    except Exception as e:
+        print("Error retrieving items:", e)
+        raise HTTPException(status_code=500, detail=str(e))

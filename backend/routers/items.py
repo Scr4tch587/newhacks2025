@@ -91,15 +91,19 @@ async def create_item(
     db.collection("items").document(qr_code_id).set(item_data)
 
     # ✅ Generate QR code image
-    qr_payload = {"qr_code_id": qr_code_id, "owner_email": owner_email}
-    qr = qrcode.QRCode(version=1, box_size=10, border=5)
-    qr.add_data(qr_payload)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
+    try:
+        qr_payload = {"qr_code_id": qr_code_id, "owner_email": owner_email}
+        qr = qrcode.QRCode(version=1, box_size=10, border=5)
+        qr.add_data(qr_payload)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
 
-    buffered = io.BytesIO()
-    img.save(buffered, format="PNG")
-    qr_base64 = base64.b64encode(buffered.getvalue()).decode()
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+        qr_base64 = base64.b64encode(buffered.getvalue()).decode()
+    except Exception as e:
+        print("QR code generation failed:", e)
+        qr_base64 = None
 
     return {
         "message": "Item created successfully",
