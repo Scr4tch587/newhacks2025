@@ -1,14 +1,18 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import { signInWithEmail } from '../utils/FirebaseAuth'
-import { registerTourist, getProfileWithToken } from '../utils/FastAPIClient'
+import { registerTourist, registerBusiness, registerRetailer, getLoginProfileWithToken } from '../utils/FastAPIClient'
 import { getIdToken } from '../utils/FirebaseAuth'
 
 export default function SignupPage() {
   const navigate = useNavigate()
+  const [role, setRole] = useState('tourist') // 'tourist' | 'business' | 'retailer'
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [address, setAddress] = useState('')
+  const [suggestions, setSuggestions] = useState([])
+  const [suggestionLoading, setSuggestionLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
@@ -17,12 +21,20 @@ export default function SignupPage() {
     setError(null)
     setLoading(true)
     try {
-      // Call backend to create Firebase user and Firestore tourist doc
-      await registerTourist({username, email, password})
+      // Call backend to create account based on role
+      if (role === 'tourist') {
+        await registerTourist({ username, email, password })
+      } else if (role === 'business') {
+        if (!address) throw new Error('Please provide a location')
+        await registerBusiness({ name: username, email, password, address })
+      } else if (role === 'retailer') {
+        if (!address) throw new Error('Please provide a location')
+        await registerRetailer({ name: username, email, password, address })
+      }
       // Sign in client-side to obtain ID token
       await signInWithEmail(email, password)
       const token = await getIdToken()
-      const profile = await getProfileWithToken(token)
+      const profile = await getLoginProfileWithToken(token)
       console.log('Registered profile:', profile)
       navigate('/dashboard')
     } catch (err) {
@@ -37,6 +49,20 @@ export default function SignupPage() {
     <div className="flex flex-col items-center justify-center h-screen bg-gray-50">
       <div className="bg-white p-8 rounded-2xl shadow-md w-96">
         <h1 className="text-2xl font-bold text-center mb-6 text-gray-800">Create Account</h1>
+
+        {/* Role selector */}
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          {['tourist','business','retailer'].map(r => (
+            <button
+              key={r}
+              type="button"
+              onClick={() => setRole(r)}
+              className={`py-2 rounded border ${role===r ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+            >
+              {r.charAt(0).toUpperCase() + r.slice(1)}
+            </button>
+          ))}
+        </div>
 
         <form onSubmit={submit} className="flex flex-col gap-4">
           <input
@@ -63,6 +89,48 @@ export default function SignupPage() {
             required
             className="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
+          {role !== 'tourist' && (
+            <div className="relative">
+              <input
+                type="text"
+                value={address}
+                onChange={async (e) => {
+                  const val = e.target.value
+                  setAddress(val)
+                  if (!val || val.length < 3) { setSuggestions([]); return }
+                  // smart suggestions using Nominatim
+                  try {
+                    setSuggestionLoading(true)
+                    const q = encodeURIComponent(val)
+                    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${q}`)
+                    const json = await res.json()
+                    setSuggestions(Array.isArray(json) ? json : [])
+                  } catch (e) {
+                    setSuggestions([])
+                  } finally {
+                    setSuggestionLoading(false)
+                  }
+                }}
+                placeholder="Business/Retailer Location"
+                required
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              {suggestionLoading && <div className="text-xs text-gray-500 mt-1">Searching…</div>}
+              {suggestions.length > 0 && (
+                <ul className="absolute z-10 left-0 right-0 bg-white border rounded shadow max-h-48 overflow-auto mt-1">
+                  {suggestions.map(s => (
+                    <li
+                      key={s.place_id}
+                      onClick={() => { setAddress(s.display_name); setSuggestions([]) }}
+                      className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                    >
+                      {s.display_name}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
           <button
             type="submit"
             disabled={loading}

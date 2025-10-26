@@ -19,15 +19,35 @@ def verify_token(authorization: str = Header(...)):
 
 @router.get("/profile")
 def get_profile(uid: str = Depends(verify_token)):
-    # Check if tourist
-    doc = db.collection("tourists").document(uid).get()
-    if doc.exists:
-        return {"role": "tourist", "profile": doc.to_dict()}
-
-    # Check if business
+    """Return the caller's role and profile.
+    Preference: business > retailer > tourist when multiple exist.
+    """
+    # Business (by uid doc id)
     doc = db.collection("businesses").document(uid).get()
     if doc.exists:
         return {"role": "business", "profile": doc.to_dict()}
+
+    # Retailer (by email)
+    try:
+        user_record = auth.get_user(uid)
+        email = user_record.email if user_record else None
+        if email:
+            # Some older business docs may be keyed by email — prefer business role if found
+            legacy_biz = db.collection("businesses").document(email).get()
+            if legacy_biz.exists:
+                return {"role": "business", "profile": legacy_biz.to_dict()}
+
+            q = db.collection("retailers").where("email", "==", email).limit(1)
+            results = list(q.stream())
+            if results:
+                return {"role": "retailer", "profile": results[0].to_dict()}
+    except Exception:
+        pass
+
+    # Tourist (by uid)
+    doc = db.collection("tourists").document(uid).get()
+    if doc.exists:
+        return {"role": "tourist", "profile": doc.to_dict()}
 
     raise HTTPException(status_code=404, detail="User not found")
 

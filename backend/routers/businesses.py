@@ -181,7 +181,8 @@ def register_business(business: BusinessCreate):
             "email": business.email,
             "business_name": business.business_name,
             "uid": user_record.uid,
-            "role": "business"
+            "role": "business",
+            "address": business.address,
         })
         return {"message": "Business account created", "uid": user_record.uid}
     except Exception as e:

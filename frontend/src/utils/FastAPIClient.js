@@ -65,6 +65,36 @@ export async function registerTourist(payload) {
   return data
 }
 
+export async function registerBusiness(payload) {
+  // payload: { name, email, password, address }
+  const body = {
+    email: payload.email,
+    password: payload.password,
+    business_name: payload.name,
+    address: payload.address,
+  }
+  const { data } = await api.post('/businesses/register', body)
+  return data
+}
+
+export async function registerRetailer(payload) {
+  // payload: { name, email, password, address }
+  const body = {
+    name: payload.name,
+    email: payload.email,
+    password: payload.password,
+    address: payload.address,
+  }
+  const { data } = await api.post('/retailers/register', body)
+  return data
+}
+
+export async function getLoginProfileWithToken(idToken) {
+  if (!idToken) return null
+  const { data } = await api.get('/login/profile', { headers: { Authorization: `Bearer ${idToken}` } })
+  return data
+}
+
 export async function getProfileWithToken(idToken) {
   if (!idToken) return null
   const { data } = await api.get('/tourists/profile', { headers: { Authorization: `Bearer ${idToken}` } })

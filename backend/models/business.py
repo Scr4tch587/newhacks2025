@@ -10,6 +10,7 @@ class BusinessCreate(BaseModel):
     email: EmailStr
     password: str
     business_name: str
+    address: str
 
 class BusinessTransaction(BaseModel):
     name: str

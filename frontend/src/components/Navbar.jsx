@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { signOutUser } from '../utils/FirebaseAuth'
 
 export default function Navbar() {
-  const { user } = useAuth()
+  const { user, role } = useAuth()
   const navigate = useNavigate()
 
   const handleLogout = async () => {
@@ -20,8 +20,11 @@ export default function Navbar() {
       <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
         <Link to="/dashboard" className="text-xl font-semibold">Waypost</Link>
         <div className="flex items-center gap-4">
-          <Link to="/dashboard" className="text-gray-700 hover:text-black">Dashboard</Link>
-          <Link to="/business-dashboard" className="text-gray-700 hover:text-black">Business</Link>
+          {role === 'business' ? (
+            <Link to="/business-dashboard" className="text-gray-700 hover:text-black">Business Dashboard</Link>
+          ) : (
+            <Link to="/dashboard" className="text-gray-700 hover:text-black">Dashboard</Link>
+          )}
           <Link to="/points" className="text-gray-700 hover:text-black">Points</Link>
           <Link to="/donate" className="text-gray-700 hover:text-black">Donate Item</Link>
           {user ? (
