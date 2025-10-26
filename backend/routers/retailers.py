@@ -176,7 +176,7 @@ async def create_item_for_retailer(
     db.collection("retailer_items").document(qr_code_id).set(item_data)
 
     # ✅ Generate QR code with embedded data
-    qr_payload = {"qr_code_id": qr_code_id, "retailer_email": retailer_email}
+    qr_payload = {"qr_code_id": qr_code_id}
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
     qr.add_data(qr_payload)
     qr.make(fit=True)
@@ -198,7 +198,6 @@ async def create_item_for_retailer(
 # ----------------------------
 @router.post("/scan_item_qr")
 def scan_item_qr(qr_code_id: str, scanner_email: str):
-    # Fetch item
     item_doc = db.collection("items").document(qr_code_id).get()
     if not item_doc.exists:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -224,7 +223,13 @@ def scan_item_qr(qr_code_id: str, scanner_email: str):
     # Update item ownership
     db.collection("items").document(qr_code_id).update({"owner_email": scanner_email, "status": "unavailable"})
 
-    return {"message": "Points awarded", "scanner_points": scanner_points}
+    # Return QR code ID so frontend can display it
+    return {
+        "message": "Points awarded",
+        "scanner_points": scanner_points,
+        "qr_code_id": qr_code_id  # <-- frontend should use this
+    }
+
 
 @router.delete("/item/{qr_code_id}")
 def delete_retail_item(qr_code_id: str, logged_in_uid: str = Depends(verify_token)):
