@@ -1,9 +1,15 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, UploadFile, File
 from models.item import Item
 from db.firestore_client import db
 from typing import List, Dict, Any, Optional
 from geopy.geocoders import Nominatim
 from math import radians, sin, cos, asin, sqrt
+import requests
+import os
+from dotenv import load_dotenv
+from db import cloudinary_client
+import uuid
+from db.cloudinary_client import upload_file
 
 router = APIRouter(prefix="/items", tags=["Items"])
 
@@ -110,6 +116,10 @@ def pickup_item(qr_code_id: str, tourist_email: str):
 
     return {"message": f"{tourist_email} picked up {qr_code_id}", "remaining_points": tourist["points"] - cost}
 
+
+
+
+
 @router.post("/dropoff/{qr_code_id}/{business_email}")
 def dropoff_item(qr_code_id: str, business_email: str):
     business_doc = db.collection("businesses").document(business_email).get()
@@ -133,3 +143,25 @@ def dropoff_item(qr_code_id: str, business_email: str):
     db.collection("items").document(qr_code_id).update({"status": "available", "owner_email": business_email})
 
     return {"message": f"{qr_code_id} dropped off at {business_email}"}
+
+@router.post("/upload_image/{item_id}")
+async def upload_item_image(item_id: str, file: UploadFile = File(...)):
+    try:
+        # Read the uploaded file content
+        file_content = await file.read()
+
+        # Generate unique public_id for Cloudinary
+        public_id = f"{item_id}_{uuid.uuid4()}"
+
+        # Upload to Cloudinary
+        result = upload_file(file_content, public_id)
+        image_url = result.get("secure_url")
+
+        if not image_url:
+            return {"error": "Cloudinary upload failed"}
+
+        # Return the Cloudinary URL
+        return {"message": "Image uploaded successfully", "image_url": image_url}
+
+    except Exception as e:
+        return {"error": str(e)}
