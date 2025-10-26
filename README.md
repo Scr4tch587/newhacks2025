@@ -11,5 +11,11 @@ Our online platform **Waypost** addresses the concerning rise of single use item
 ### Tech Stack
 
 Frontend: React, Tailwind CSS, Leaflet
+
+---
+
 Backend: FastAPI
+
+---
+
 Database and User Authentication: Firebase 
