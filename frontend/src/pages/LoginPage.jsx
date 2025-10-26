@@ -74,18 +74,20 @@ export default function LoginPage() {
             className="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
           <button
-            type="submit"
-            disabled={loading}
-            className="bg-indigo-600 text-white rounded-lg py-2 font-medium hover:bg-indigo-700 disabled:opacity-50"
-          >
-            {loading ? 'Signing in…' : 'Sign In'}
-          </button>
+  type="submit"
+  disabled={loading}
+  className="bg-[#D2B48C] text-white rounded-lg py-2 font-medium hover:bg-[#C19A6B] disabled:opacity-50"
+>
+  {loading ? 'Signing in…' : 'Sign In'}
+</button>
+
           {error && <div className="text-sm text-red-600">{error}</div>}
         </form>
 
         <p className="text-sm text-center mt-4 text-gray-600">
           Don’t have an account?{' '}
-          <Link to="/signup" className="text-indigo-600 hover:underline">Sign up</Link>
+          <Link to="/signup" className="text-[#D2B48C] hover:underline">Sign up</Link>
+
         </p>
       </div>
     </div>

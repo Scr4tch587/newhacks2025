@@ -97,11 +97,12 @@ export default function DashboardPage() {
         <div className="flex justify-between items-center">
           <h1 className="text-xl font-semibold text-white drop-shadow-md">Nearby Listings</h1>
           <button
-            className="px-4 py-2 rounded bg-indigo-600 text-white"
-            onClick={() => navigate('/donate')}
-          >
-            Donate Item
-          </button>
+  className="px-4 py-2 rounded bg-[#D2B48C] text-white hover:bg-[#C19A6B]"
+  onClick={() => navigate('/donate')}
+>
+  Donate Item
+</button>
+
         </div>
 
         {/* === MAP WITH WOOD FRAME === */}

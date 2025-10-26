@@ -23,9 +23,10 @@ export default function HomePage() {
             Discover, donate, and do good. Earn and redeem points while helping the community.
           </p>
           <div className="mt-8 flex items-center justify-center gap-4">
-            <Link to="/dashboard" className="px-6 py-3 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg">
-              Explore Listings
-            </Link>
+            <Link to="/dashboard" className="px-6 py-3 rounded-lg bg-[#D2B48C] text-white hover:bg-[#C19A6B] shadow-lg">
+  Explore Listings
+</Link>
+
             <Link to="/donate" className="px-6 py-3 rounded-lg border border-white/70 bg-white/20 backdrop-blur-sm hover:bg-white/40 shadow">
               Donate an Item
             </Link>
@@ -47,9 +48,10 @@ export default function HomePage() {
         <div className="relative z-10">
           <h2 className="text-4xl font-bold drop-shadow-lg">Tourists</h2>
           <p className="mt-3 text-lg drop-shadow-md">Find items nearby and track your impact as you travel.</p>
-          <Link to="/signup" className="mt-4 inline-block text-indigo-200 hover:text-white underline">
-            Create account
-          </Link>
+          <Link to="/signup" className="mt-4 inline-block text-[#D2B48C] hover:text-white underline">
+  Create account
+</Link>
+
         </div>
       </section>
 
@@ -67,9 +69,10 @@ export default function HomePage() {
         <div className="relative z-10">
           <h2 className="text-4xl font-bold drop-shadow-lg">Businesses</h2>
           <p className="mt-3 text-lg drop-shadow-md">List items, schedule pickups, and earn points with ease.</p>
-          <Link to="/signup" className="mt-4 inline-block text-indigo-200 hover:text-white underline">
-            Become a partner
-          </Link>
+          <Link to="/signup" className="mt-4 inline-block text-[#D2B48C] hover:text-white underline">
+  Become a partner
+</Link>
+
         </div>
       </section>
 
@@ -87,9 +90,10 @@ export default function HomePage() {
         <div className="relative z-10">
           <h2 className="text-4xl font-bold drop-shadow-lg">Retailers</h2>
           <p className="mt-3 text-lg drop-shadow-md">Scan items, award points, and grow your profile in the network.</p>
-          <Link to="/signup" className="mt-4 inline-block text-indigo-200 hover:text-white underline">
-            Join the network
-          </Link>
+          <Link to="/signup" className="mt-4 inline-block text-[#D2B48C] hover:text-white underline">
+  Join the network
+</Link>
+
         </div>
       </section>
 

@@ -84,7 +84,11 @@ export default function SignupPage() {
               key={r}
               type="button"
               onClick={() => setRole(r)}
-              className={`py-2 rounded border ${role===r ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+className={`py-2 rounded border ${
+  role===r
+    ? 'bg-[#D2B48C] text-white border-[#D2B48C] hover:bg-[#C19A6B]'
+    : 'bg-white text-gray-700 hover:bg-gray-50'
+}`}
             >
               {r.charAt(0).toUpperCase() + r.slice(1)}
             </button>
@@ -160,7 +164,7 @@ export default function SignupPage() {
           <button
             type="submit"
             disabled={loading}
-            className="bg-indigo-600 text-white rounded-lg py-2 font-medium hover:bg-indigo-700 disabled:opacity-50"
+className="bg-[#D2B48C] text-white rounded-lg py-2 font-medium hover:bg-[#C19A6B] disabled:opacity-50"
           >
             {loading ? 'Creating…' : 'Sign Up'}
           </button>
@@ -169,7 +173,7 @@ export default function SignupPage() {
 
         <p className="text-sm text-center mt-4 text-gray-600">
           Already have an account?{' '}
-          <Link to="/login" className="text-indigo-600 hover:underline">Sign in</Link>
+<Link to="/login" className="text-[#D2B48C] hover:underline">Sign in</Link>
         </p>
       </div>
     </div>
