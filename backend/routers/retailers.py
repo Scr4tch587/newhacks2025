@@ -153,12 +153,12 @@ async def create_item_for_retailer(
     if file:
         try:
             file_content = await file.read()
-            public_id = f"retailer_items/{uuid.uuid4()}"
-            upload_result = upload_file(file_content, public_id)
+            public_id = str(uuid.uuid4())
+            upload_result = upload_file(file_content, public_id, folder="retailer_items")
             image_url = upload_result.get("secure_url")
         except Exception as e:
             print("Cloudinary upload failed:", e)
-            raise HTTPException(status_code=400, detail="Image upload failed")
+            raise HTTPException(status_code=400, detail=str(e) if isinstance(e, RuntimeError) else "Image upload failed")
 
     # ✅ Generate a new QR code ID for the item
     qr_code_id = str(uuid.uuid4())
@@ -275,12 +275,12 @@ async def create_retail_profile(
     if image is not None:
         try:
             content = await image.read()
-            public_id = f"retail_profiles/{uuid.uuid4()}"
-            result = upload_file(content, public_id)
+            public_id = str(uuid.uuid4())
+            result = upload_file(content, public_id, folder="retail_profiles")
             image_url = result.get("secure_url")
         except Exception as e:
             print("Cloudinary upload failed:", e)
-            raise HTTPException(status_code=400, detail="Image upload failed")
+            raise HTTPException(status_code=400, detail=str(e) if isinstance(e, RuntimeError) else "Image upload failed")
 
     store_id = str(uuid.uuid4())
     data = {

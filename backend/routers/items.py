@@ -14,6 +14,7 @@ from db.cloudinary_client import upload_file
 import qrcode
 import io
 import base64
+from pydantic import BaseModel
 
 
 router = APIRouter(prefix="/items", tags=["Items"])
@@ -66,14 +67,14 @@ async def create_item(
     if file:
         try:
             file_content = await file.read()
-            public_id = f"items/{uuid.uuid4()}"
-            result = upload_file(file_content, public_id)
+            public_id = str(uuid.uuid4())
+            result = upload_file(file_content, public_id, folder="items")
             image_url = result.get("secure_url")
             if not image_url:
                 raise Exception("Cloudinary upload failed")
         except Exception as e:
             print("Cloudinary upload failed:", e)
-            raise HTTPException(status_code=400, detail="Image upload failed")
+            raise HTTPException(status_code=400, detail=str(e) if isinstance(e, RuntimeError) else "Image upload failed")
 
     # ✅ Generate QR code ID
     qr_code_id = str(uuid.uuid4())
@@ -91,15 +92,19 @@ async def create_item(
     db.collection("items").document(qr_code_id).set(item_data)
 
     # ✅ Generate QR code image
-    qr_payload = {"qr_code_id": qr_code_id, "owner_email": owner_email}
-    qr = qrcode.QRCode(version=1, box_size=10, border=5)
-    qr.add_data(qr_payload)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
+    try:
+        qr_payload = {"qr_code_id": qr_code_id, "owner_email": owner_email}
+        qr = qrcode.QRCode(version=1, box_size=10, border=5)
+        qr.add_data(qr_payload)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
 
-    buffered = io.BytesIO()
-    img.save(buffered, format="PNG")
-    qr_base64 = base64.b64encode(buffered.getvalue()).decode()
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+        qr_base64 = base64.b64encode(buffered.getvalue()).decode()
+    except Exception as e:
+        print("QR code generation failed:", e)
+        qr_base64 = None
 
     return {
         "message": "Item created successfully",
@@ -114,19 +119,26 @@ def list_items():
 
 
 @router.get("/nearby")
-def items_nearby(lat: float = Query(..., description="Origin latitude"), lng: float = Query(..., description="Origin longitude"), limit: int = Query(20, ge=1, le=100)) -> List[Dict[str, Any]]:
+def items_nearby(
+    lat: float = Query(..., description="Origin latitude"),
+    lng: float = Query(..., description="Origin longitude"),
+    limit: int = Query(20, ge=1, le=100),
+) -> List[Dict[str, Any]]:
     """
     Return items whose owners are businesses with known addresses, sorted by distance to the given coordinates.
-    Provide `lat` and `lng` for the origin. Response items include qr_code_id as `id`, name, description,
-    owner_email, address, lat, lng, distance_km.
+    Response items are enriched with:
+      - id (qr_code_id)
+      - lat, lng (of the owner's business address)
+      - distance_km
+      - owner_name, owner_address, owner_email
     """
     origin = {"lat": float(lat), "lng": float(lng)}
 
-    # Collect tuples of (distance, original_item_dict) so we can sort by proximity
+    # Collect tuples of (distance, enriched_item_dict) so we can sort by proximity
     distance_items: List[tuple[float, Dict[str, Any]]] = []
     for doc in db.collection("items").stream():
-        item = doc.to_dict()
-        owner_email = item.get("owner_email")
+        raw = doc.to_dict() or {}
+        owner_email = raw.get("owner_email")
         if not owner_email:
             continue
 
@@ -134,7 +146,7 @@ def items_nearby(lat: float = Query(..., description="Origin latitude"), lng: fl
         owner_doc = db.collection("businesses").document(owner_email).get()
         if not owner_doc.exists:
             continue
-        owner = owner_doc.to_dict()
+        owner = owner_doc.to_dict() or {}
         addr = owner.get("address")
         if not addr:
             continue
@@ -145,9 +157,20 @@ def items_nearby(lat: float = Query(..., description="Origin latitude"), lng: fl
             continue
 
         dist_km = _haversine_km(origin["lat"], origin["lng"], coords["lat"], coords["lng"])
+
+        # Build enriched item payload
+        item: Dict[str, Any] = dict(raw)
+        item["id"] = raw.get("qr_code_id") or doc.id
+        item["lat"] = coords["lat"]
+        item["lng"] = coords["lng"]
+        item["distance_km"] = round(dist_km, 3)
+        item["owner_email"] = owner_email
+        item["owner_address"] = addr
+        item["owner_name"] = owner.get("name") or owner.get("business_name") or owner_email
+
         distance_items.append((dist_km, item))
 
-    # Sort by distance and return the original item dicts for the closest `limit` items
+    # Sort by distance and return the enriched dicts for the closest `limit` items
     distance_items.sort(key=lambda x: x[0])
     closest = [itm for _, itm in distance_items[:limit]]
     return closest
@@ -158,6 +181,22 @@ def get_item(qr_code_id: str):
     if not doc.exists:
         return {"error": "Item not found"}
     return doc.to_dict()
+
+# --- Update item status (simple JSON) ---
+class ItemStatusUpdate(BaseModel):
+    qr_code_id: str
+    status: str
+
+@router.patch("/status")
+def update_item_status(payload: ItemStatusUpdate):
+    ref = db.collection("items").document(payload.qr_code_id)
+    if not ref.get().exists:
+        raise HTTPException(status_code=404, detail="Item not found")
+    try:
+        ref.update({"status": payload.status})
+        return {"message": "Status updated", "qr_code_id": payload.qr_code_id, "status": payload.status}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # --- Pickup/Dropoff endpoints ---
 
@@ -256,14 +295,14 @@ async def update_item_details(
         try:
             file_content = await file.read()
             # Prefer a deterministic public_id so subsequent updates replace the old asset
-            public_id = f"items/{qr_code_id}"
-            result = upload_file(file_content, public_id)
+            public_id = qr_code_id
+            result = upload_file(file_content, public_id, folder="items")
             image_url = result.get("secure_url")
             if not image_url:
                 raise Exception("Cloudinary upload returned no secure_url")
         except Exception as e:
             print("Cloudinary upload failed:", e)
-            raise HTTPException(status_code=400, detail="Image upload failed")
+            raise HTTPException(status_code=400, detail=str(e) if isinstance(e, RuntimeError) else "Image upload failed")
 
     update_data: Dict[str, Any] = {
         "description": description,

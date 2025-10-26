@@ -48,3 +48,77 @@
 .animate-fadeTrail {
   animation: fadeTrail 3s forwards;
 }
+
+@keyframes airplaneFly {
+  0% {
+    transform: translateX(-50px) translateY(0);
+  }
+  25% {
+    transform: translateX(25%) translateY(-8px);
+  }
+  50% {
+    transform: translateX(50%) translateY(8px);
+  }
+  75% {
+    transform: translateX(75%) translateY(-8px);
+  }
+  100% {
+    transform: translateX(110vw) translateY(0);
+  }
+}
+
+.animate-airplane {
+  animation: airplaneFly 8s linear infinite;
+}
+
+/* Make the plane pivot closer to the nose so the tilt looks natural */
+.airplane-node {
+  transform-origin: 65% 45%; /* tweak if needed depending on your image */
+}
+
+@keyframes airplaneSine {
+  0%   { transform: translateX(-50px) translateY(0) rotate(0deg); }
+  10%  { transform: translateX(10vw) translateY(-15px) rotate(0deg); }    /* climbing → keep straight */
+  20%  { transform: translateX(20vw) translateY(15px)  rotate(80deg); }   /* descending → nose down (clockwise) */
+  30%  { transform: translateX(30vw) translateY(-15px) rotate(0deg); }
+  40%  { transform: translateX(40vw) translateY(15px)  rotate(80deg); }
+  50%  { transform: translateX(50vw) translateY(-15px) rotate(0deg); }
+  60%  { transform: translateX(60vw) translateY(15px)  rotate(80deg); }
+  70%  { transform: translateX(70vw) translateY(-15px) rotate(0deg); }
+  80%  { transform: translateX(80vw) translateY(15px)  rotate(80deg); }
+  90%  { transform: translateX(90vw) translateY(-15px) rotate(0deg); }
+  100% { transform: translateX(110vw) translateY(0)    rotate(0deg); }
+}
+
+.animate-airplane-sine {
+  animation: airplaneSine 15s linear infinite;
+  will-change: transform;
+}
+
+.airplane-wrapper {
+  position: absolute;
+}
+
+/* Dashed line behind the plane */
+.airplane-trail {
+  position: absolute;
+  top: 50%;
+  left: -50px;             /* trail starts behind plane */
+  width: 50px;             /* length of the trail */
+  height: 2px;
+  border-top: 2px dashed rgba(0,0,0,0.4);
+  transform: translateY(-50%);
+  opacity: 0.6;
+  animation: trailFade 2s linear infinite;
+}
+
+@keyframes trailFade {
+  0% {
+    opacity: 0.6;
+    transform: scaleX(1) translateY(-50%);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(0.2) translateY(-50%);
+  }
+}

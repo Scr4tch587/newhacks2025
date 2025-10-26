@@ -72,6 +72,18 @@ export async function updateItemDetails({ qr_code_id, description, owner_email, 
   return data
 }
 
+export async function updateItemStatus(qr_code_id, status) {
+  const { data } = await api.patch('/items/status', { qr_code_id, status })
+  return data
+}
+
+export async function createBusinessTransaction({ identifier, payload, idToken }) {
+  const config = { params: { identifier } }
+  if (idToken) config.headers = { Authorization: `Bearer ${idToken}` }
+  const { data } = await api.post('/businesses/transactions', payload, config)
+  return data
+}
+
 export async function registerTourist(payload) {
   console.log({ username: payload.username, email: payload.email, password: payload.password })
   const { data } = await api.post('/tourists/register', payload)
