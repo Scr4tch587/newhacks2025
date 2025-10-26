@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, UploadFile, File
+from fastapi import APIRouter, Query, UploadFile, File, HTTPException, Form
 from models.item import Item
 from db.firestore_client import db
 from typing import List, Dict, Any, Optional
@@ -10,6 +10,10 @@ from dotenv import load_dotenv
 from db import cloudinary_client
 import uuid
 from db.cloudinary_client import upload_file
+import qrcode
+import io
+import base64
+
 
 router = APIRouter(prefix="/items", tags=["Items"])
 
@@ -37,11 +41,70 @@ def _geocode_address(address: str) -> Optional[Dict[str, float]]:
         return None
 
 @router.post("/")
-def create_item(item: Item):
-    doc_ref = db.collection("items").document(item.qr_code_id)
-    doc_ref.set(item.model_dump())  # Pydantic v2
-    return {"message": "Item created", "item": item}
+async def create_item(
+    name: str = Form(...),
+    description: str = Form(...),
+    owner_email: str = Form(...),
+    file: Optional[UploadFile] = File(None)
+):
+    """
+    Creates an item and uploads image to Cloudinary (if provided).
+    Returns QR code + item info.
+    """
 
+    # ✅ Verify owner (tourist or business)
+    owner_doc = db.collection("tourists").document(owner_email).get()
+    if not owner_doc.exists:
+        owner_doc = db.collection("businesses").document(owner_email).get()
+        if not owner_doc.exists:
+            raise HTTPException(status_code=404, detail="Owner not found")
+
+    # ✅ Upload image to Cloudinary (if provided)
+    image_url = None
+    if file:
+        try:
+            file_content = await file.read()
+            public_id = f"items/{uuid.uuid4()}"
+            result = upload_file(file_content, public_id)
+            image_url = result.get("secure_url")
+            if not image_url:
+                raise Exception("Cloudinary upload failed")
+        except Exception as e:
+            print("Cloudinary upload failed:", e)
+            raise HTTPException(status_code=400, detail="Image upload failed")
+
+    # ✅ Generate QR code ID
+    qr_code_id = str(uuid.uuid4())
+
+    # ✅ Create Firestore item
+    item_data = {
+        "name": name,
+        "description": description,
+        "qr_code_id": qr_code_id,
+        "owner_email": owner_email,
+        "status": "available",
+        "image_url": image_url,
+        "created_by": "user"
+    }
+    db.collection("items").document(qr_code_id).set(item_data)
+
+    # ✅ Generate QR code image
+    qr_payload = {"qr_code_id": qr_code_id, "owner_email": owner_email}
+    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+    qr.add_data(qr_payload)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    buffered = io.BytesIO()
+    img.save(buffered, format="PNG")
+    qr_base64 = base64.b64encode(buffered.getvalue()).decode()
+
+    return {
+        "message": "Item created successfully",
+        "qr_code_id": qr_code_id,
+        "qr_code_base64": qr_base64,
+        "image_url": image_url,
+    }
 @router.get("/")
 def list_items():
     return [doc.to_dict() for doc in db.collection("items").stream()]
@@ -144,24 +207,3 @@ def dropoff_item(qr_code_id: str, business_email: str):
 
     return {"message": f"{qr_code_id} dropped off at {business_email}"}
 
-@router.post("/upload_image/{item_id}")
-async def upload_item_image(item_id: str, file: UploadFile = File(...)):
-    try:
-        # Read the uploaded file content
-        file_content = await file.read()
-
-        # Generate unique public_id for Cloudinary
-        public_id = f"{item_id}_{uuid.uuid4()}"
-
-        # Upload to Cloudinary
-        result = upload_file(file_content, public_id)
-        image_url = result.get("secure_url")
-
-        if not image_url:
-            return {"error": "Cloudinary upload failed"}
-
-        # Return the Cloudinary URL
-        return {"message": "Image uploaded successfully", "image_url": image_url}
-
-    except Exception as e:
-        return {"error": str(e)}
