@@ -6,7 +6,7 @@ import { getIdToken } from '../utils/FirebaseAuth'
 
 export default function SignupPage() {
   const navigate = useNavigate()
-  const [name, setName] = useState('')
+  const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -18,7 +18,7 @@ export default function SignupPage() {
     setLoading(true)
     try {
       // Call backend to create Firebase user and Firestore tourist doc
-      await registerTourist({ name, email, password })
+      await registerTourist({username, email, password})
       // Sign in client-side to obtain ID token
       await signInWithEmail(email, password)
       const token = await getIdToken()
@@ -41,8 +41,8 @@ export default function SignupPage() {
         <form onSubmit={submit} className="flex flex-col gap-4">
           <input
             type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
             placeholder="Full Name"
             required
             className="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"

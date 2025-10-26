@@ -1,8 +1,9 @@
 import axios from 'axios'
 
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',
+export const api = axios.create({
+  baseURL: 'http://localhost:8000',
   withCredentials: true,
+  headers: { 'Content-Type': 'application/json' }
 })
 
 export async function getListings() {
@@ -46,13 +47,14 @@ export async function getNearbyItems({ address, lat, lng, limit = 50 } = {}) {
 }
 
 export async function registerTourist(payload) {
+  console.log({ username: payload.username, email: payload.email, password: payload.password })
   const { data } = await api.post('/tourists/register', payload)
   return data
 }
 
 export async function getProfileWithToken(idToken) {
   if (!idToken) return null
-  const { data } = await api.get('/login/profile', { headers: { Authorization: `Bearer ${idToken}` } })
+  const { data } = await api.get('/tourists/profile', { headers: { Authorization: `Bearer ${idToken}` } })
   return data
 }
 

@@ -2,6 +2,7 @@ from pydantic import BaseModel, EmailStr
 
 
 class TouristCreate(BaseModel):
+    username: str
     email: EmailStr
     password: str
 
