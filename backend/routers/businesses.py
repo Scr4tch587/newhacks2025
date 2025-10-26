@@ -1,18 +1,22 @@
-from fastapi import APIRouter, Query
-from models.business import Business
+from fastapi import APIRouter, Query, HTTPException, Depends
+from models.business import Business, BusinessCreate
 from db.firestore_client import db
+from db.firestore_auth import auth
 from typing import List, Dict, Any, Optional
 from geopy.geocoders import Nominatim
 from math import radians, sin, cos, asin, sqrt
 
+
 router = APIRouter(prefix="/businesses", tags=["Businesses"])
 
+# Create a business
 @router.post("/")
 def create_business(business: Business):
-    doc_ref = db.collection("businesses").document(business.email)
-    doc_ref.set(business.model_dump())  # Pydantic v2
+    doc_ref = db.collection("businesses").document(business.email)  # UID = email
+    doc_ref.set(business.model_dump())
     return {"message": "Business created", "business": business}
 
+# List all businesses
 @router.get("/")
 def list_businesses():
     docs = db.collection("businesses").stream()
@@ -60,21 +64,51 @@ def businesses_nearby(address: str = Query(..., description="User's address to c
     results.sort(key=lambda x: x["distance_km"])  # nearest first
     return results[:limit]
 
-@router.get("/{email}")
-def get_business(email: str):
-    doc = db.collection("businesses").document(email).get()
-    if not doc.exists:
-        return {"error": "Business not found"}
-    return doc.to_dict()
 
-@router.get("/search")
-def search_business(address_query: str):
-    results = []
-    for doc in db.collection("businesses").stream():
-        business = doc.to_dict()
-        if address_query.lower() in business["address"].lower():
-            results.append(business)
-    return {"results": results}
+
+# Get by email
+@router.get("/email/{email}")
+def get_business_by_email(email: str):
+    docs = db.collection("businesses").where("email", "==", email).stream()
+    results = [doc.to_dict() for doc in docs]
+    if not results:
+        return {"error": "Business not found"}
+    return results[0]
+
+# Get by address
+@router.get("/address/{address}")
+def get_business_by_address(address: str):
+    docs = db.collection("businesses").where("address", "==", address).stream()
+    results = [doc.to_dict() for doc in docs]
+    if not results:
+        return {"error": "Business not found"}
+    return results
+
+@router.post("/register")
+def register_business(business: BusinessCreate):
+    try:
+        user_record = auth.create_user(
+            email=business.email,
+            password=business.password,
+            display_name=business.business_name
+        )
+        # Save additional info to Firestore
+        db.collection("businesses").document(user_record.uid).set({
+            "email": business.email,
+            "business_name": business.business_name,
+            "uid": user_record.uid,
+            "role": "business"
+        })
+        return {"message": "Business account created", "uid": user_record.uid}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/{uid}")
+def get_business(uid: str):
+    doc = db.collection("businesses").document(uid).get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="Business not found")
+    return doc.to_dict()
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:

@@ -5,3 +5,8 @@ class Business(BaseModel):
     email: EmailStr
     points: int = 0
     address: str
+
+class BusinessCreate(BaseModel):
+    email: EmailStr
+    password: str
+    business_name: str
