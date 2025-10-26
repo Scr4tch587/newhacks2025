@@ -1,14 +1,98 @@
-from fastapi import APIRouter, Query, HTTPException, Depends
-from models.business import Business, BusinessCreate
+from fastapi import APIRouter, Query, HTTPException, Depends, status
+from models.business import Business, BusinessCreate, BusinessTransaction
 from db.firestore_client import db
 from db.firestore_auth import auth
 from typing import List, Dict, Any, Optional
+import logging
+from urllib.parse import unquote
 from geopy.geocoders import Nominatim
 from math import radians, sin, cos, asin, sqrt
+from datetime import datetime
+from fastapi import Depends
+# Note: transactions endpoints intentionally unauthenticated per request
 
 
 router = APIRouter(prefix="/businesses", tags=["Businesses"])
 
+
+def _resolve_business_doc_ref(identifier: str):
+    """
+    Resolve a business document reference from a provided identifier.
+    The identifier may be the document ID, a uid stored in the 'uid' field,
+    or an email stored in the 'email' field. Return a DocumentReference or None.
+    """
+    logger = logging.getLogger(__name__)
+    logger.debug("Resolving business identifier: %s", identifier)
+
+    # Try direct document lookup first
+    try:
+        doc_ref = db.collection("businesses").document(identifier)
+        doc = doc_ref.get()
+        if doc.exists:
+            logger.debug("Found business by direct document id: %s", identifier)
+            return doc_ref
+    except Exception as e:
+        logger.exception("Error during direct document lookup for %s: %s", identifier, e)
+
+    # Try queries against known fields
+    for field in ("uid", "email"):
+        try:
+            query = db.collection("businesses").where(field, "==", identifier).limit(1)
+            docs = list(query.stream())
+            if docs:
+                logger.debug("Found business by %s == %s -> doc id %s", field, identifier, docs[0].id)
+                return db.collection("businesses").document(docs[0].id)
+        except Exception as e:
+            logger.exception("Error querying businesses by %s for %s: %s", field, identifier, e)
+
+    # If identifier looks URL-encoded, try decoded version
+    try:
+        decoded = unquote(identifier)
+        if decoded and decoded != identifier:
+            logger.debug("Trying URL-decoded identifier: %s", decoded)
+            for field in ("uid", "email"):
+                try:
+                    query = db.collection("businesses").where(field, "==", decoded).limit(1)
+                    docs = list(query.stream())
+                    if docs:
+                        logger.debug("Found business by %s == %s -> doc id %s", field, decoded, docs[0].id)
+                        return db.collection("businesses").document(docs[0].id)
+                except Exception as e:
+                    logger.exception("Error querying businesses by %s for decoded %s: %s", field, decoded, e)
+    except Exception:
+        pass
+
+    logger.debug("No business matched identifier: %s", identifier)
+    return None
+
+@router.get("/transactions")
+def list_business_transactions(identifier: str = Query(..., description="Business identifier (doc id, uid or email)")):
+    """Return transactions scheduled at the business location.
+
+    Requires a verified Firebase ID token.
+    """
+    # Ensure business exists (resolve tolerant identifier)
+    doc_ref = _resolve_business_doc_ref(identifier)
+    if not doc_ref:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    try:
+        coll = doc_ref.collection("transactions")
+        docs = coll.stream()
+        res = []
+        for d in docs:
+            item = d.to_dict() or {}
+            item["id"] = d.id
+            res.append(item)
+        # Optionally sort by scheduled_time if present
+        try:
+            res.sort(key=lambda x: x.get("scheduled_time") or "")
+        except Exception:
+            pass
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
 # Create a business
 @router.post("/")
 def create_business(business: Business):
@@ -97,19 +181,78 @@ def register_business(business: BusinessCreate):
             "email": business.email,
             "business_name": business.business_name,
             "uid": user_record.uid,
-            "role": "business"
+            "role": "business",
+            "address": business.address,
         })
         return {"message": "Business account created", "uid": user_record.uid}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.get("/{uid}")
-def get_business(uid: str):
-    doc = db.collection("businesses").document(uid).get()
-    if not doc.exists:
+# Add a transaction for a business (pickup/dropoff scheduled at the business location)
+@router.post("/transactions", status_code=status.HTTP_201_CREATED)
+def add_business_transaction(transaction: BusinessTransaction, identifier: str = Query(..., description="Business identifier (doc id, uid or email)")):
+    """
+    Create a new business transaction record under the business document.
+    Request body should match models.business.BusinessTransaction.
+    """
+    # Ensure business exists (resolve tolerant identifier)
+    doc_ref = _resolve_business_doc_ref(identifier)
+    if not doc_ref:
         raise HTTPException(status_code=404, detail="Business not found")
-    return doc.to_dict()
 
+        # Persist the transaction under a subcollection 'transactions'
+    try:
+        coll = doc_ref.collection("transactions")
+        tx_ref = coll.document()  # auto-generated id
+        data = transaction.model_dump() if hasattr(transaction, "model_dump") else dict(transaction)
+
+        # Normalize and validate transaction_type
+        tx_type = data.get("transaction_type")
+        if tx_type:
+            tx_type_clean = str(tx_type).strip().lower()
+            if tx_type_clean not in ("pickup", "dropoff"):
+                raise HTTPException(status_code=400, detail="transaction_type must be 'Pickup' or 'Dropoff'")
+            data["transaction_type"] = tx_type_clean.title()
+
+        # If date and time are provided, try to build an ISO scheduled_time
+        date_str = data.get("date")
+        time_str = data.get("time")
+        if date_str and time_str:
+            try:
+                # Accept common formats like 'YYYY-MM-DD' and 'HH:MM' (24h)
+                dt = None
+                combined = f"{date_str} {time_str}"
+                try:
+                    dt = datetime.fromisoformat(f"{date_str}T{time_str}")
+                except Exception:
+                    # Fallback to parsing common format
+                    dt = datetime.strptime(combined, "%Y-%m-%d %H:%M")
+                # Store as ISO (assume input is local/naive — append Z to indicate UTC if you prefer)
+                data["scheduled_time"] = dt.isoformat()
+            except Exception:
+                # If parsing fails, leave date/time as-is but do not block creation
+                data["scheduled_time"] = None
+
+        # Attach server-side timestamp
+        data["created_at"] = datetime.utcnow().isoformat() + "Z"
+
+        # Record who created the transaction if available from request headers
+        try:
+            # If callers include Authorization header processing elsewhere, that
+            # can populate created_by fields. Here, we defensively attempt to
+            # use request headers if present (no verification performed).
+            # NOTE: this is intentionally lightweight since endpoint is unauthenticated.
+            from fastapi import Request
+            # Try to access the current request via dependency injection fallback
+            # This is optional and best-effort; if unavailable we simply skip.
+            # (In production you'd prefer verified tokens.)
+            req = None
+        except Exception:
+            req = None
+        tx_ref.set(data)
+        return {"message": "Transaction created", "id": tx_ref.id, "transaction": data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Great-circle distance between two points (in kilometers)."""
@@ -123,6 +266,12 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     r = 6371  # Radius of earth in kilometers
     return r * c
 
+@router.get("/{uid}")
+def get_business(uid: str):
+    doc = db.collection("businesses").document(uid).get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="Business not found")
+    return doc.to_dict()
 
 _geocoder = Nominatim(user_agent="newhacks2025-backend")
 

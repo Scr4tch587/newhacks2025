@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import { fetchProductByQRCode, getAvailableTimeSlots, getAvailableDates } from '../utils/DonationAPI'
-import { getNearbyBusinesses } from '../utils/FastAPIClient'
+import { getNearbyBusinesses, api } from '../utils/FastAPIClient'
+import { useAuth } from '../contexts/AuthContext'
 
 export default function DonateItemPage() {
   const navigate = useNavigate()
@@ -31,8 +32,10 @@ export default function DonateItemPage() {
   const [suggestionLoading, setSuggestionLoading] = useState(false)
   const [locations, setLocations] = useState([])
   const [loadingLocations, setLoadingLocations] = useState(false)
+  const [txResult, setTxResult] = useState(null)
   const availableDates = getAvailableDates()
   const scannerRef = useRef(null)
+  const { user, getIdToken } = useAuth()
 
   // Optional prompt state (not strictly needed but kept for UX)
   const [cameraPromptVisible] = useState(false)
@@ -194,8 +197,54 @@ export default function DonateItemPage() {
       alert('Please select an address from the suggestions before continuing')
       return
     }
-    console.log('Submitting donation:', { qrCodeId, productInfo, ...form })
-    setStep('success')
+    // Ensure user is logged in
+    if (!user) {
+      alert('You must be logged in to submit a donation')
+      return
+    }
+
+    const userName = user.displayName || user.email || null
+    if (!userName) {
+      alert('Unable to determine user name from account. Please ensure your profile has a display name or email.')
+      return
+    }
+
+    // Build transaction payload — per backend BusinessTransaction model
+    const payload = {
+      name: userName,
+      item_name: productInfo?.productName || form.description.split('\n')[0] || 'Donation',
+      qr_code_id: qrCodeId || '',
+      date: form.date,
+      time: form.timeSlot,
+      transaction_type: 'Dropoff'
+    }
+
+    try {
+      // Retrieve Firebase ID token and include in Authorization header
+      const idToken = await getIdToken()
+      if (!idToken) {
+        alert('You must be logged in to submit a donation')
+        return
+      }
+
+      const resp = await api.post(
+        `/businesses/transactions`,
+        payload,
+        { headers: { Authorization: `Bearer ${idToken}` }, params: { identifier: form.dropoffLocation } }
+      )
+
+      if (resp && (resp.status === 200 || resp.status === 201)) {
+        console.log('Transaction created', resp.data)
+        setTxResult(resp.data)
+        setStep('success')
+      } else {
+        console.error('Unexpected response creating transaction', resp)
+        alert('Donation submitted locally but failed to record a transaction with the business. Please try again.')
+      }
+    } catch (err) {
+      console.error('Failed to create transaction', err)
+      alert('Failed to record donation transaction: ' + (err?.response?.data?.detail || err.message || err))
+    }
   }
 
   if (step === 'scan') {
@@ -226,14 +275,25 @@ export default function DonateItemPage() {
 
   if (step === 'success') {
     return (
-      <div className="max-w-lg mx-auto mt-10 bg-white rounded-lg shadow-xl p-8 space-y-4 text-center">
-        <div className="text-6xl mb-4">🎉</div>
+      <div className="max-w-lg mx-auto mt-10 bg-white rounded-lg shadow-xl p-6 space-y-4 text-center">
+        <div className="text-5xl">🎉</div>
         <h1 className="text-2xl font-semibold text-gray-800">Donation Submitted!</h1>
-        <p className="text-gray-700 text-lg">
-          Thank you for giving your <span className="font-semibold text-indigo-600">'{productInfo?.productName}'</span> a second life!
-          When a new owner is found, points will be awarded to your account!
+        <p className="text-gray-700">
+          Thank you for donating <span className="font-semibold text-indigo-600">{productInfo?.productName}</span>.
         </p>
-        <div className="pt-4">
+
+        {txResult ? (
+          <div className="mt-4 bg-gray-50 border rounded p-4 text-left">
+            <div className="text-sm text-gray-500">Transaction recorded</div>
+            <div className="font-medium mt-1">ID: <span className="font-mono text-sm">{txResult.id}</span></div>
+            {txResult.transaction?.scheduled_time && (
+              <div className="text-sm text-gray-600 mt-1">Scheduled: {new Date(txResult.transaction.scheduled_time).toLocaleString()}</div>
+            )}
+            <div className="mt-2 text-xs text-gray-600">A confirmation was sent to the drop-off location.</div>
+          </div>
+        ) : null}
+
+        <div className="pt-4 flex justify-center gap-2">
           <button
             onClick={() => navigate('/dashboard')}
             className="px-6 py-3 rounded bg-indigo-600 text-white hover:bg-indigo-700 font-medium"

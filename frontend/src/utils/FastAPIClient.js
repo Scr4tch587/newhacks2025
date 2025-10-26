@@ -33,6 +33,19 @@ export async function getNearbyBusinesses(address, limit = 20) {
   return data
 }
 
+export async function getBusinessTransactions(uid) {
+  if (!uid) return []
+  // Accept optional idToken via second argument in case caller wants to pass auth header
+  const args = Array.from(arguments)
+  const idToken = args.length > 1 ? args[1] : null
+  const config = { params: { identifier: uid } }
+  if (idToken) {
+    config.headers = { Authorization: `Bearer ${idToken}` }
+  }
+  const { data } = await api.get('/businesses/transactions', config)
+  return data
+}
+
 export async function getNearbyItems({ address, lat, lng, limit = 50 } = {}) {
   // Accept either address or lat/lng. Return [] if none provided.
   if ((!address || !address.trim()) && (lat == null || lng == null)) return []
@@ -49,6 +62,36 @@ export async function getNearbyItems({ address, lat, lng, limit = 50 } = {}) {
 export async function registerTourist(payload) {
   console.log({ username: payload.username, email: payload.email, password: payload.password })
   const { data } = await api.post('/tourists/register', payload)
+  return data
+}
+
+export async function registerBusiness(payload) {
+  // payload: { name, email, password, address }
+  const body = {
+    email: payload.email,
+    password: payload.password,
+    business_name: payload.name,
+    address: payload.address,
+  }
+  const { data } = await api.post('/businesses/register', body)
+  return data
+}
+
+export async function registerRetailer(payload) {
+  // payload: { name, email, password, address }
+  const body = {
+    name: payload.name,
+    email: payload.email,
+    password: payload.password,
+    address: payload.address,
+  }
+  const { data } = await api.post('/retailers/register', body)
+  return data
+}
+
+export async function getLoginProfileWithToken(idToken) {
+  if (!idToken) return null
+  const { data } = await api.get('/login/profile', { headers: { Authorization: `Bearer ${idToken}` } })
   return data
 }
 
