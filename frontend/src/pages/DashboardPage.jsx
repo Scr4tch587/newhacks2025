@@ -4,15 +4,31 @@ import MapComponent from '../components/MapComponent'
 import MapSidebar from '../components/MapSidebar'
 import ListingDetailModal from '../components/ListingDetailModal'
 import { getNearbyItems } from '../utils/FastAPIClient'
+import Footsteps from "../components/Footsteps";
+
+// import your background layers
+import sky from "../images/sky.png"
+import mountains from "../images/mountains.png"
+import woodframe from "../images/woodframe.png"
+
+// Define constants for the frame dimensions
+const BORDER_WIDTH = 40; // The width of the image border
+const FRAME_OVERLAP_PX = 20; // How far you want the frame to "pop out" past the container's edge
 
 export default function DashboardPage() {
   const [listings, setListings] = useState([])
   const [selected, setSelected] = useState(null)
   const [origin, setOrigin] = useState({ lat: 43.653, lng: -79.383 })
+  const [scrollY, setScrollY] = useState(0)
   const navigate = useNavigate()
 
   useEffect(() => {
-    // Helper to compute Haversine distance in km
+    const handleScroll = () => setScrollY(window.scrollY)
+    window.addEventListener("scroll", handleScroll)
+    return () => window.removeEventListener("scroll", handleScroll)
+  }, [])
+
+  useEffect(() => {
     const haversineKm = (lat1, lon1, lat2, lon2) => {
       const toRad = (d) => (d * Math.PI) / 180
       const R = 6371
@@ -26,8 +42,7 @@ export default function DashboardPage() {
       return R * c
     }
 
-    (async () => {
-      // Get user's current location; fallback to Toronto downtown
+    ;(async () => {
       let originLoc = { lat: 43.653, lng: -79.383 }
       if (typeof navigator !== 'undefined' && navigator.geolocation) {
         await new Promise((resolve) => {
@@ -42,10 +57,8 @@ export default function DashboardPage() {
         })
       }
 
-      // Ask backend for nearby items using coordinates (backend will geocode business owners)
       try {
         const items = await getNearbyItems({ lat: originLoc.lat, lng: originLoc.lng, limit: 100 })
-        // backend returns { id, name, description, lat, lng, distance_km }
         const mapped = (items || []).map((it) => ({
           id: it.id,
           qr_code_id: it.id,
@@ -54,7 +67,7 @@ export default function DashboardPage() {
           description: it.description,
           lat: it.lat,
           lng: it.lng,
-          distanceKm: it.distance_km != null ? it.distance_km : (it.distanceKm ?? undefined),
+          distanceKm: it.distance_km != null ? it.distance_km : (it.distanceKm ?? haversineKm(originLoc.lat, originLoc.lng, it.lat, it.lng)),
         }))
         setListings(mapped)
         setOrigin(originLoc)
@@ -65,19 +78,70 @@ export default function DashboardPage() {
   }, [])
 
   return (
-    <div className="max-w-6xl mx-auto p-4 space-y-4">
-      <div className="flex justify-between items-center">
-        <h1 className="text-xl font-semibold">Nearby Listings</h1>
-        <button className="px-4 py-2 rounded bg-indigo-600 text-white" onClick={() => navigate('/donate')}>Donate Item</button>
-      </div>
-      <div className="flex h-[70vh] rounded-lg overflow-hidden border border-gray-200">
-        <MapSidebar listings={listings} onSelectListing={setSelected} />
-        <div className="flex-1">
-          <MapComponent center={[origin.lat, origin.lng]} listings={listings} onSelectListing={setSelected} />
+    <div className="relative min-h-screen overflow-hidden">
+      {/* === BACKGROUND WITH PARALLAX === */}
+      <img
+        src={sky}
+        alt="Sky background"
+        className="absolute inset-0 w-full h-full object-cover z-0"
+        style={{ transform: `translateY(${scrollY * 0.5}px)` }}
+      />
+      <img
+        src={mountains}
+        alt="Mountains"
+        className="absolute bottom-0 w-full object-cover z-10"
+      />
+
+      {/* === MAIN DASHBOARD CONTENT === */}
+      <div className="relative z-30 max-w-6xl mx-auto p-4 space-y-4">
+        <div className="flex justify-between items-center">
+          <h1 className="text-xl font-semibold text-white drop-shadow-md">Nearby Listings</h1>
+          <button
+            className="px-4 py-2 rounded bg-indigo-600 text-white"
+            onClick={() => navigate('/donate')}
+          >
+            Donate Item
+          </button>
         </div>
+
+        {/* === MAP WITH WOOD FRAME === */}
+        <div
+          className="flex h-[70vh] w-full overflow-hidden shadow-xl"
+          style={{
+            // 1. Pull the container out by the desired overlap amount
+            margin: `-${FRAME_OVERLAP_PX}px`, 
+            
+            // 2. Add padding to make the container large enough for the border PLUS the overlap
+            padding: `${BORDER_WIDTH + FRAME_OVERLAP_PX}px`, 
+
+            // 3. Define the border to hold the image
+            border: `${BORDER_WIDTH}px solid transparent`,
+            borderImage: `url(${woodframe}) 60 round`, 
+            
+            // Other styles
+            backgroundColor: 'white', 
+          }}
+        >
+          <MapSidebar listings={listings} onSelectListing={setSelected} />
+          <div className="flex-1">
+            <MapComponent
+              center={[origin.lat, origin.lng]}
+              listings={listings}
+              onSelectListing={setSelected}
+            />
+          </div>
+        </div>
+
+        <ListingDetailModal
+          isOpen={!!selected}
+          listing={selected}
+          onClose={() => setSelected(null)}
+          onDonate={() => navigate('/donate')}
+        />
       </div>
 
-      <ListingDetailModal isOpen={!!selected} listing={selected} onClose={() => setSelected(null)} onDonate={() => navigate('/donate')} />
+      {/* footsteps animation overlay */}
+      <Footsteps />
     </div>
   )
 }
