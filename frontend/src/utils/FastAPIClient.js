@@ -33,6 +33,19 @@ export async function getNearbyBusinesses(address, limit = 20) {
   return data
 }
 
+export async function getBusinessTransactions(uid) {
+  if (!uid) return []
+  // Accept optional idToken via second argument in case caller wants to pass auth header
+  const args = Array.from(arguments)
+  const idToken = args.length > 1 ? args[1] : null
+  const config = { params: { identifier: uid } }
+  if (idToken) {
+    config.headers = { Authorization: `Bearer ${idToken}` }
+  }
+  const { data } = await api.get('/businesses/transactions', config)
+  return data
+}
+
 export async function getNearbyItems({ address, lat, lng, limit = 50 } = {}) {
   // Accept either address or lat/lng. Return [] if none provided.
   if ((!address || !address.trim()) && (lat == null || lng == null)) return []

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { fetchBusinessListings, fetchTransactionsForLocation } from '../utils/BusinessFakeAPI'
+import { fetchBusinessListings } from '../utils/BusinessFakeAPI'
+import { getBusinessTransactions } from '../utils/FastAPIClient'
+import { useAuth } from '../contexts/AuthContext'
 
 function ListingCard({ l }) {
   return (
@@ -20,17 +22,17 @@ function ListingCard({ l }) {
 }
 
 function TransactionRow({ t }) {
-  const scheduled = new Date(t.scheduled_time)
+  const scheduled = t?.scheduled_time ? new Date(t.scheduled_time) : null
+  const createdBy = t?.created_by_name || t?.created_by_email || t?.name || 'Unknown'
   return (
     <div className="flex items-center justify-between border-b py-2">
       <div>
         <div className="font-medium">{t.item_name}</div>
-        <div className="text-sm text-gray-600">{t.type.toUpperCase()} — {t.user_name}</div>
+        <div className="text-sm text-gray-600">{(t.transaction_type || '').toUpperCase()} — {createdBy}</div>
         {t.notes ? <div className="text-xs text-gray-500">{t.notes}</div> : null}
       </div>
       <div className="text-right">
-        <div className="text-sm">{scheduled.toLocaleString()}</div>
-        <div className="text-xs mt-1 px-2 py-0.5 rounded {t.status === 'arriving_soon' ? 'bg-indigo-100 text-indigo-800' : 'bg-gray-100 text-gray-800'}">{t.status}</div>
+        <div className="text-sm">{scheduled ? scheduled.toLocaleString() : `${t.date || ''} ${t.time || ''}`}</div>
       </div>
     </div>
   )
@@ -40,28 +42,50 @@ export default function BusinessDashboard() {
   const [listings, setListings] = useState([])
   const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
+  const { getIdToken, user, loading: authLoading } = useAuth()
 
-  useEffect(() => {
-    let mounted = true
-    async function load() {
-      setLoading(true)
-      try {
-        const [ls, tx] = await Promise.all([
-          fetchBusinessListings({ owner_email: 'owner@example.com' }),
-          fetchTransactionsForLocation({ location_id: 'loc-main' }),
-        ])
-        if (!mounted) return
-        setListings(ls || [])
-        setTransactions(tx || [])
-      } catch (e) {
-        console.error('Failed to load business dashboard', e)
-      } finally {
-        if (mounted) setLoading(false)
+useEffect(() => {
+  let mounted = true;
+
+  async function load() {
+    setLoading(true);
+    try {
+      // Wait for the AuthContext to finish loading and have a user
+      if (authLoading) {
+        // small early return — effect will re-run when authLoading/user change
+        return
       }
+
+      if (!user) {
+        console.warn('User not signed in, cannot fetch transactions')
+        return
+      }
+
+      const idToken = await getIdToken()
+      console.log('Fetched ID token:', idToken)
+
+      const [ls, tx] = await Promise.all([
+        fetchBusinessListings({ owner_email: user.email || "owner@example.com" }),
+        getBusinessTransactions(user.uid || 'loc-main', idToken),
+      ])
+
+      if (!mounted) return;
+
+      setListings(ls || []);
+      setTransactions(tx || []);
+    } catch (e) {
+      console.error("Failed to load business dashboard", e);
+    } finally {
+      if (mounted) setLoading(false);
     }
-    load()
-    return () => { mounted = false }
-  }, [])
+  }
+
+  load();
+  return () => {
+    mounted = false;
+  };
+}, [authLoading, user]);
+
 
   return (
     <div className="flex gap-6 h-[70vh]">

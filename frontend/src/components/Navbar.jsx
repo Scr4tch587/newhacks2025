@@ -1,10 +1,19 @@
-import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-//import { signInWithGoogle, signOutUser, subscribeAuth } from '../utils/FirebaseAuth'
+import { useAuth } from '../contexts/AuthContext'
+import { signOutUser } from '../utils/FirebaseAuth'
 
 export default function Navbar() {
-  const [user, setUser] = useState(null)
+  const { user } = useAuth()
   const navigate = useNavigate()
+
+  const handleLogout = async () => {
+    try {
+      await signOutUser()
+      navigate('/login')
+    } catch (e) {
+      console.error('Logout failed', e)
+    }
+  }
 
   return (
     <nav className="w-full bg-white/80 backdrop-blur border-b border-gray-200 sticky top-0 z-50">
@@ -16,7 +25,10 @@ export default function Navbar() {
           <Link to="/points" className="text-gray-700 hover:text-black">Points</Link>
           <Link to="/donate" className="text-gray-700 hover:text-black">Donate Item</Link>
           {user ? (
-            <button className="px-3 py-1.5 rounded bg-gray-900 text-white hover:bg-black">Logout</button>
+            <>
+              <span className="text-sm text-gray-700 mr-2">Hi, {user.displayName || user.email}</span>
+              <button onClick={handleLogout} className="px-3 py-1.5 rounded bg-gray-900 text-white hover:bg-black">Logout</button>
+            </>
           ) : (
             <Link to="/login" className="px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-700">
               Login

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import { fetchProductByQRCode, getAvailableTimeSlots, getAvailableDates } from '../utils/DonationAPI'
 import { getNearbyBusinesses, api } from '../utils/FastAPIClient'
-import { getFirebaseAuth, getIdToken } from '../utils/FirebaseAuth'
+import { useAuth } from '../contexts/AuthContext'
 
 export default function DonateItemPage() {
   const navigate = useNavigate()
@@ -35,6 +35,7 @@ export default function DonateItemPage() {
   const [txResult, setTxResult] = useState(null)
   const availableDates = getAvailableDates()
   const scannerRef = useRef(null)
+  const { user, getIdToken } = useAuth()
 
   // Optional prompt state (not strictly needed but kept for UX)
   const [cameraPromptVisible] = useState(false)
@@ -197,14 +198,12 @@ export default function DonateItemPage() {
       return
     }
     // Ensure user is logged in
-    const auth = getFirebaseAuth()
-    const currentUser = auth.currentUser
-    if (!currentUser) {
+    if (!user) {
       alert('You must be logged in to submit a donation')
       return
     }
 
-    const userName = currentUser.displayName || currentUser.email || null
+    const userName = user.displayName || user.email || null
     if (!userName) {
       alert('Unable to determine user name from account. Please ensure your profile has a display name or email.')
       return
@@ -229,9 +228,9 @@ export default function DonateItemPage() {
       }
 
       const resp = await api.post(
-        `/businesses/${form.dropoffLocation}/transactions`,
+        `/businesses/transactions`,
         payload,
-        { headers: { Authorization: `Bearer ${idToken}` } }
+        { headers: { Authorization: `Bearer ${idToken}` }, params: { identifier: form.dropoffLocation } }
       )
 
       if (resp && (resp.status === 200 || resp.status === 201)) {
