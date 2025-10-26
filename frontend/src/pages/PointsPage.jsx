@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useAuth } from "../contexts/AuthContext";
 
 // Import your images
 import sky from "../images/sky.png";
@@ -10,12 +11,13 @@ import store4Logo from "../images/store4.png";
 import store5Logo from "../images/store5.png";
 
 export default function PointsPage() {
+  const { profile } = useAuth();
   const [animatedProgress, setAnimatedProgress] = useState(0);
   const [openIndex, setOpenIndex] = useState(null);
   const [scrollY, setScrollY] = useState(0);
 
   // constants (replace with backend later)
-  const points = 50;
+  const points = Math.max(0, Number(profile?.points ?? 0));
   const goal = 500;
   const progress = Math.min((points / goal) * 100, 100);
 
@@ -120,7 +122,7 @@ export default function PointsPage() {
           </p>
           <div className="relative w-full h-8 bg-emerald-100 rounded-full overflow-hidden border-2 border-emerald-300 shadow-inner">
             <div
-              className="absolute top-0 left-0 h-full bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-600 transition-all duration-1000 ease-out"
+              className="absolute top-0 left-0 h-full bg-linear-to-r from-emerald-400 via-emerald-500 to-emerald-600 transition-all duration-1000 ease-out"
               style={{ width: `${animatedProgress}%` }}
             />
             <div className="absolute top-0 left-0 w-full h-full bg-[linear-gradient(110deg,rgba(255,255,255,0)_0%,rgba(255,255,255,0.4)_40%,rgba(255,255,255,0)_80%)] animate-[shine_2s_infinite]" />
@@ -139,7 +141,7 @@ export default function PointsPage() {
             {stores.map((store, i) => (
               <div
                 key={store.name}
-                className="bg-gradient-to-b from-[#FDF6EC] to-[#F9EFD8] rounded-2xl shadow-md border-2 border-[#F5E7C5] overflow-hidden"
+                className="bg-linear-to-b from-[#FDF6EC] to-[#F9EFD8] rounded-2xl shadow-md border-2 border-[#F5E7C5] overflow-hidden"
               >
                 {/* Collapsed Header = JUST Logo */}
                 <div

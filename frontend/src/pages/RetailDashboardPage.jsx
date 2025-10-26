@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { getRetailProfilesByEmail, createRetailProfile } from '../utils/FastAPIClient'
+import { getRetailProfilesByEmail, createRetailProfile, deleteRetailProfile, getRetailProfileItems } from '../utils/FastAPIClient'
 import { useNavigate } from 'react-router-dom'
 
 
@@ -12,6 +12,7 @@ export default function RetailDashboardPage() {
   const [error, setError] = useState(null)
   const [message, setMessage] = useState(null)
   const navigate = useNavigate()
+  const [itemsByStore, setItemsByStore] = useState({})
 
   
   const email = profile?.email || user?.email || null
@@ -29,6 +30,28 @@ export default function RetailDashboardPage() {
     })()
     return () => { cancelled = true }
   }, [email])
+
+  // When profiles load, fetch items for each store_id
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const entries = {}
+      for (const p of profiles) {
+        const sid = p.store_id || p.id
+        if (!sid) continue
+        try {
+          const items = await getRetailProfileItems(sid)
+          if (cancelled) return
+          entries[sid] = items
+        } catch (e) {
+          if (cancelled) return
+          entries[sid] = []
+        }
+      }
+      if (!cancelled) setItemsByStore(entries)
+    })()
+    return () => { cancelled = true }
+  }, [profiles])
 
   const onChange = (e) => {
     const { name, value } = e.target
@@ -69,10 +92,25 @@ export default function RetailDashboardPage() {
     }
   }
 
+  const onDeleteProfile = async (p, e) => {
+    // prevent row click navigation
+    if (e) e.stopPropagation()
+    const storeId = p.store_id || p.id
+    if (!storeId) return
+    if (!confirm('Delete this retail profile? This cannot be undone.')) return
+    try {
+      const token = await getIdToken()
+      await deleteRetailProfile(storeId, token)
+      setProfiles((prev) => prev.filter((x) => (x.store_id || x.id) !== storeId))
+    } catch (err) {
+      const msg = err?.response?.data?.detail || err?.message || 'Failed to delete profile'
+      setError(msg)
+    }
+  }
+
   const handleProfileClick = (profile) => {
     const storeId = profile.store_id || profile.id
-    console.log("Navigating to create item for store:", storeId)
-    navigate(`/create-item/${storeId}`) 
+    navigate(`/create-item/${storeId}`, { state: { profile } })
   }
 
   if (loading) return <div className="max-w-5xl mx-auto p-4">Loading…</div>
@@ -93,22 +131,66 @@ export default function RetailDashboardPage() {
           <p className="text-gray-600">No retail profiles yet.</p>
         ) : (
           <ul className="divide-y border rounded bg-white">
-            {profiles.map((p) => (
-              <li 
-                key={p.store_id || p.id}
-                onClick={() => handleProfileClick(p)}
-                className="p-4 flex items-start gap-4 hover:bg-gray-50 cursor-pointer transition">
-                {p.image_url ? (
-                  <img src={p.image_url} alt={p.name} className="w-16 h-16 object-cover rounded" />
-                ) : (
-                  <div className="w-16 h-16 bg-gray-200 rounded" />
-                )}
-                <div>
-                  <div className="font-medium">{p.store_name || p.name}</div>
-                  <div className="text-sm text-gray-600">{p.description}</div>
-                </div>
-              </li>
-            ))}
+            {profiles.map((p) => {
+              const sid = p.store_id || p.id
+              const items = itemsByStore[sid] || []
+              const preview = items.slice(0, 3)
+              return (
+                <li
+                  key={sid}
+                  className="p-4 hover:bg-gray-50 transition"
+                >
+                  <div 
+                    onClick={() => handleProfileClick(p)}
+                    className="flex items-start gap-4 cursor-pointer"
+                  >
+                    {p.image_url ? (
+                      <img src={p.image_url} alt={p.name} className="w-16 h-16 object-cover rounded" />
+                    ) : (
+                      <div className="w-16 h-16 bg-gray-200 rounded" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium">{p.store_name || p.name}</div>
+                      <div className="text-sm text-gray-600">{p.description}</div>
+                    </div>
+                    <div className="shrink-0">
+                      <button
+                        onClick={(e) => onDeleteProfile(p, e)}
+                        className="px-2 py-1 text-xs rounded border border-red-200 text-red-700 hover:bg-red-50"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Items created from this profile */}
+                  <div className="mt-3 pl-20">
+                    <div className="text-xs text-gray-600 mb-1">
+                      {items.length === 0 ? 'No items created yet.' : `${items.length} item${items.length>1?'s':''} created from this profile`}
+                    </div>
+                    {preview.length > 0 && (
+                      <div className="flex gap-3">
+                        {preview.map((it) => (
+                          <div
+                            key={it.qr_code_id || it.id}
+                            onClick={(e) => { e.stopPropagation(); navigate(`/retail-item/${it.qr_code_id || it.id}`) }}
+                            className="flex items-center gap-2 text-xs border rounded px-2 py-1 bg-white cursor-pointer hover:bg-gray-50"
+                            title="View QR"
+                          >
+                            {it.image_url ? (
+                              <img src={it.image_url} alt={it.name} className="w-8 h-8 object-cover rounded" />
+                            ) : (
+                              <div className="w-8 h-8 bg-gray-200 rounded" />
+                            )}
+                            <div className="truncate max-w-48" title={it.name}>{it.name}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </li>
+              )
+            })}
           </ul>
         )}
       </section>

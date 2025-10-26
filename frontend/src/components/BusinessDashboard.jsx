@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getBusinessTransactions, getHeldItemsByEmail } from '../utils/FastAPIClient'
+import { getBusinessTransactions, getHeldItemsByEmail, updateItemStatus, deleteBusinessTransaction } from '../utils/FastAPIClient'
 import { useAuth } from '../contexts/AuthContext'
 
 function ListingCard({ l }) {
@@ -22,7 +22,7 @@ function ListingCard({ l }) {
   )
 }
 
-function TransactionRow({ t }) {
+function TransactionRow({ t, onConfirmDropoff, onConfirmPickup }) {
   const scheduled = t?.scheduled_time ? new Date(t.scheduled_time) : null
   const createdBy = t?.created_by_name || t?.created_by_email || t?.name || 'Unknown'
   return (
@@ -34,6 +34,22 @@ function TransactionRow({ t }) {
       </div>
       <div className="text-right">
         <div className="text-sm">{scheduled ? scheduled.toLocaleString() : `${t.date || ''} ${t.time || ''}`}</div>
+        {(t.transaction_type || '').toLowerCase() === 'dropoff' && t.qr_code_id ? (
+          <button
+            onClick={() => onConfirmDropoff?.(t)}
+            className="mt-2 inline-flex items-center px-3 py-1.5 rounded bg-emerald-600 text-white text-sm hover:bg-emerald-700"
+          >
+            Confirm Dropoff
+          </button>
+        ) : null}
+        {(t.transaction_type || '').toLowerCase() === 'pickup' && t.qr_code_id ? (
+          <button
+            onClick={() => onConfirmPickup?.(t)}
+            className="mt-2 ml-2 inline-flex items-center px-3 py-1.5 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-700"
+          >
+            Confirm Pickup
+          </button>
+        ) : null}
       </div>
     </div>
   )
@@ -43,6 +59,7 @@ export default function BusinessDashboard() {
   const [listings, setListings] = useState([])
   const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
+  const [toast, setToast] = useState("")
   const { getIdToken, user, loading: authLoading } = useAuth()
 
 useEffect(() => {
@@ -72,7 +89,9 @@ useEffect(() => {
 
       if (!mounted) return;
 
-      setListings(ls || []);
+      // Only display AVAILABLE listings
+      const onlyAvailable = Array.isArray(ls) ? ls.filter((it) => (it?.status || '').toLowerCase() === 'available') : []
+      setListings(onlyAvailable);
       setTransactions(tx || []);
     } catch (e) {
       console.error("Failed to load business dashboard", e);
@@ -102,9 +121,63 @@ useEffect(() => {
       <div className="w-1/2 overflow-auto">
         <h2 className="text-lg font-medium mb-3">Scheduled Pickups & Dropoffs (at your location)</h2>
         <div className="bg-white rounded border shadow-sm p-2">
+          {toast ? (
+            <div className="mb-2 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-2 text-sm">
+              {toast}
+            </div>
+          ) : null}
           {loading ? <div className="text-gray-500">Loading transactions…</div> : (
             transactions.length === 0 ? <div className="text-gray-500 p-4">No upcoming activity.</div> : (
-              transactions.map((t) => <TransactionRow key={t.id} t={t} />)
+              transactions.map((t) => (
+                <TransactionRow
+                  key={t.id}
+                  t={t}
+                  onConfirmDropoff={async (tx) => {
+                    try {
+                      const idToken = await getIdToken()
+                      // 1) Set item status to 'available'
+                      await updateItemStatus(tx.qr_code_id, 'available')
+                      // 2) Delete the transaction
+                      await deleteBusinessTransaction({ identifier: user.uid || '', transactionId: tx.id, idToken })
+                      // 3) Update UI state: remove tx and refresh available listings
+                      setTransactions((prev) => prev.filter((p) => p.id !== tx.id))
+                      try {
+                        const ls = await getHeldItemsByEmail(user.email || '')
+                        const onlyAvailable = Array.isArray(ls) ? ls.filter((it) => (it?.status || '').toLowerCase() === 'available') : []
+                        setListings(onlyAvailable)
+                      } catch {}
+                      // 4) Show success toast
+                      setToast('Dropoff confirmed')
+                      setTimeout(() => setToast(''), 3000)
+                    } catch (e) {
+                      console.error('Confirm dropoff failed', e)
+                      alert(e?.response?.data?.detail || e?.message || 'Failed to confirm dropoff')
+                    }
+                  }}
+                  onConfirmPickup={async (tx) => {
+                    try {
+                      const idToken = await getIdToken()
+                      // 1) Set item status to 'unavailable'
+                      await updateItemStatus(tx.qr_code_id, 'unavailable')
+                      // 2) Delete the transaction
+                      await deleteBusinessTransaction({ identifier: user.uid || '', transactionId: tx.id, idToken })
+                      // 3) Update UI state: remove tx and refresh available listings (item should disappear)
+                      setTransactions((prev) => prev.filter((p) => p.id !== tx.id))
+                      try {
+                        const ls = await getHeldItemsByEmail(user.email || '')
+                        const onlyAvailable = Array.isArray(ls) ? ls.filter((it) => (it?.status || '').toLowerCase() === 'available') : []
+                        setListings(onlyAvailable)
+                      } catch {}
+                      // 4) Show success toast
+                      setToast('Pickup confirmed')
+                      setTimeout(() => setToast(''), 3000)
+                    } catch (e) {
+                      console.error('Confirm pickup failed', e)
+                      alert(e?.response?.data?.detail || e?.message || 'Failed to confirm pickup')
+                    }
+                  }}
+                />
+              ))
             )
           )}
         </div>

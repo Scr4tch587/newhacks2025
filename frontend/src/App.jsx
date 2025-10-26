@@ -5,10 +5,12 @@ import DashboardPage from './pages/DashboardPage'
 import BusinessDashboardPage from './pages/BusinessDashboardPage'
 import RetailDashboardPage from './pages/RetailDashboardPage'
 import PointsPage from './pages/PointsPage'
+import CreateRetailItemPage from './pages/CreateRetailItemPage'
 import DonateItemPage from './pages/DonateItemPage'
 import SignupPage from './pages/SignupPage'
 import HomePage from './pages/HomePage'
 import CreateItemPage from './pages/CreateItemPage' //retailer
+import RetailItemQRPage from './pages/RetailItemQRPage'
 
 function App() {
   return (
@@ -19,6 +21,8 @@ function App() {
   <Route path="/dashboard" element={<DashboardPage />} />
   <Route path="/business-dashboard" element={<BusinessDashboardPage />} />
   <Route path="/retail-dashboard" element={<RetailDashboardPage />} />
+  <Route path="/create-item/:storeId" element={<CreateRetailItemPage />} />
+  <Route path="/retail-item/:qrId" element={<RetailItemQRPage />} />
         <Route path="/points" element={<PointsPage />} />
         <Route path="/donate" element={<DonateItemPage />} />
   <Route path="/signup" element={<SignupPage />} />

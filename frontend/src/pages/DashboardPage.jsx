@@ -20,6 +20,7 @@ export default function DashboardPage() {
   const [listings, setListings] = useState([])
   const [selected, setSelected] = useState(null)
   const [pickupFor, setPickupFor] = useState(null)
+  const [toast, setToast] = useState("")
   const [origin, setOrigin] = useState({ lat: 43.653, lng: -79.383 })
   const [scrollY, setScrollY] = useState(0)
   const navigate = useNavigate()
@@ -79,10 +80,13 @@ export default function DashboardPage() {
             owner_name: it.owner_name || null,
             owner_email: it.owner_email || null,
             owner_address: it.owner_address || it.address || null,
+            status: it.status || null,
             distanceKm,
           }
         })
-        setListings(mapped)
+        // Only show AVAILABLE listings on the map view
+        const availableOnly = mapped.filter((l) => (l.status || '').toLowerCase() === 'available')
+        setListings(availableOnly)
         setOrigin(originLoc)
       } catch (e) {
         console.error('Failed to load nearby items', e)
@@ -107,6 +111,11 @@ export default function DashboardPage() {
 
       {/* === MAIN DASHBOARD CONTENT === */}
       <div className="relative z-30 max-w-6xl mx-auto p-4 space-y-4">
+        {toast ? (
+          <div className="rounded bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-2 text-sm">
+            {toast}
+          </div>
+        ) : null}
         {/* Spacer above the framed map */}
         <div className="h-8" />
 
@@ -151,12 +160,13 @@ export default function DashboardPage() {
           onClose={(didSchedule) => {
             setPickupFor(null)
             if (didSchedule) {
-              // Optimistically mark the item unavailable in local state
-              setListings((prev) => prev.map(it => (
-                (it.id === pickupFor?.id || it.qr_code_id === pickupFor?.qr_code_id)
-                  ? { ...it, status: 'unavailable' }
-                  : it
+              // Remove the picked-up listing from map (only showing AVAILABLE items)
+              setListings((prev) => prev.filter(it => (
+                !(it.id === pickupFor?.id || it.qr_code_id === pickupFor?.qr_code_id)
               )))
+              // Show pickup confirmation toast
+              setToast('Pickup confirmed')
+              setTimeout(() => setToast(''), 3000)
             }
           }}
         />

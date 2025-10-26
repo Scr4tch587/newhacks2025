@@ -110,7 +110,7 @@ export default function Footsteps() {
   }, []);
 
   return (
-    <div className="absolute inset-0 pointer-events-none z-[9999]">
+  <div className="absolute inset-0 pointer-events-none z-9999">
       {steps.map((s) => (
         <img
           key={s.id}

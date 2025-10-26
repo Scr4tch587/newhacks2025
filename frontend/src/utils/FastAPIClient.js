@@ -46,6 +46,14 @@ export async function getBusinessTransactions(uid) {
   return data
 }
 
+export async function deleteBusinessTransaction({ identifier, transactionId, idToken }) {
+  if (!identifier || !transactionId) throw new Error('identifier and transactionId are required')
+  const config = { params: { identifier } }
+  if (idToken) config.headers = { Authorization: `Bearer ${idToken}` }
+  const { data } = await api.delete(`/businesses/transactions/${encodeURIComponent(transactionId)}`, config)
+  return data
+}
+
 export async function getHeldItemsByEmail(email) {
   if (!email) return []
   try {
@@ -157,6 +165,50 @@ export async function createRetailProfile({ name, description, file }, idToken) 
   return data
 }
 
+export async function deleteRetailProfile(storeId, idToken) {
+  if (!storeId) throw new Error('storeId is required')
+  const headers = {}
+  if (idToken) headers['Authorization'] = `Bearer ${idToken}`
+  const { data } = await api.delete(`/retailers/profile/${encodeURIComponent(storeId)}`, { headers })
+  return data
+}
+
+export async function getRetailProfile(storeId) {
+  if (!storeId) return null
+  const { data } = await api.get(`/retailers/profile/${encodeURIComponent(storeId)}`)
+  return data
+}
+
+export async function getItemByQr(qrId) {
+  if (!qrId) return null
+  try {
+    const { data } = await api.get(`/items/${encodeURIComponent(qrId)}`)
+    return data
+  } catch (e) {
+    if (e?.response?.status === 404) return null
+    throw e
+  }
+}
+
+export async function createRetailerItem({ name, description, retailer_email, file, store_id }) {
+  const formData = new FormData()
+  formData.append('name', name)
+  formData.append('description', description)
+  formData.append('retailer_email', retailer_email)
+  if (store_id) formData.append('store_id', store_id)
+  if (file) formData.append('file', file)
+  const { data } = await api.post('/retailers/create_item', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+  return data
+}
+
+export async function getRetailProfileItems(storeId) {
+  if (!storeId) return []
+  const { data } = await api.get(`/retailers/profile/${encodeURIComponent(storeId)}/items`)
+  return Array.isArray(data) ? data : []
+}
+
 export default api
 
 export async function createItem(form) {
@@ -171,4 +223,27 @@ export async function createItem(form) {
   });
 
   return data;
+}
+
+export async function createDonationItem({ name, description, owner_email, file, qr_code_id, donor_uid, donor_email, date, time }) {
+  const formData = new FormData()
+  formData.append('name', name)
+  formData.append('description', description)
+  formData.append('owner_email', owner_email)
+  if (file) formData.append('file', file)
+  if (qr_code_id) formData.append('qr_code_id', qr_code_id)
+  if (donor_uid) formData.append('donor_uid', donor_uid)
+  if (donor_email) formData.append('donor_email', donor_email)
+  if (date) formData.append('date', date)
+  if (time) formData.append('time', time)
+  const { data } = await api.post('/items/create', formData, {
+  headers: { 'Content-Type': 'multipart/form-data' }
+  })
+  return data
+}
+
+export async function getRetailItemByQr(qrId) {
+  if (!qrId) return null
+  const { data } = await api.get(`/retailers/item/${encodeURIComponent(qrId)}`)
+  return data
 }

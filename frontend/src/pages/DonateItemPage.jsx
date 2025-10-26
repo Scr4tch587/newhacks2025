@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Html5Qrcode } from 'html5-qrcode'
-import { fetchProductByQRCode, getAvailableTimeSlots, getAvailableDates } from '../utils/DonationAPI'
-import { getNearbyBusinesses, updateItemDetails } from '../utils/FastAPIClient'
+import { getAvailableTimeSlots, getAvailableDates } from '../utils/DonationAPI'
+import { getNearbyBusinesses, createDonationItem, getRetailItemByQr, getRetailProfile, getItemByQr } from '../utils/FastAPIClient'
 import passportBg from "../images/passportbackground.jpg"  // 👈 background import
+import { useAuth } from '../contexts/AuthContext'
 
 // --- HELPER COMPONENT ---
 const PassportField = ({ label, value, isPlaceholder = false }) => (
@@ -96,6 +97,7 @@ const QrCodeScannerComponent = ({ onScanSuccess }) => {
 // --- MAIN PAGE ---
 export default function DonateItemPage() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [step, setStep] = useState('scan')
   const [qrCodeId, setQrCodeId] = useState(null)
   const [productInfo, setProductInfo] = useState(null)
@@ -117,10 +119,62 @@ export default function DonateItemPage() {
   const availableDates = getAvailableDates()
 
   const handleScanSuccess = useCallback(async (decodedText) => {
-    setQrCodeId(decodedText)
-    const product = await fetchProductByQRCode(decodedText)
-    setProductInfo(product)
-    setStep('form')
+    try {
+      const extractQrId = (text) => {
+        // 1) Try strict JSON
+        try {
+          const parsed = JSON.parse(text)
+          if (parsed && typeof parsed === 'object') {
+            return parsed.qr_code_id || parsed.qr || parsed.id || null
+          }
+        } catch {}
+        // 2) Try to parse Python-dict-like string with single quotes or key presence
+        const keyed = text.match(/qr_code_id['"]?\s*[:=]\s*['"]([0-9a-fA-F-]{36})['"]/)
+        if (keyed && keyed[1]) return keyed[1]
+        // 3) Fallback: search for a bare UUID v4 anywhere in the string
+        const uuid = text.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/)
+        if (uuid && uuid[0]) return uuid[0]
+        return null
+      }
+
+      const qrId = extractQrId(decodedText)
+      if (!qrId) throw new Error('Invalid QR content: missing qr_code_id')
+
+      setQrCodeId(qrId)
+
+      // Try resolving from retailer items first (richer link to profile)
+      let productName = null
+      let itemName = null
+      try {
+        const retailerResp = await getRetailItemByQr(qrId)
+        const retailerItem = retailerResp?.item
+        if (retailerItem) {
+          itemName = retailerItem.name || null
+          const storeId = retailerItem.store_id || null
+          if (storeId) {
+            const profile = await getRetailProfile(storeId)
+            productName = profile?.store_name || profile?.name || itemName || null
+          } else {
+            productName = itemName
+          }
+        }
+      } catch {}
+
+      // Fallback to general items index
+      if (!productName) {
+        try {
+          const it = await getItemByQr(qrId)
+          itemName = it?.name || itemName
+          productName = itemName || productName
+        } catch {}
+      }
+
+      setProductInfo({ productId: qrId, productName: productName || 'Unknown Item' })
+      setStep('form')
+    } catch (e) {
+      console.error('QR scan processing failed', e)
+      alert(e?.message || 'Failed to read QR code. Please try again.')
+    }
   }, [])
 
   useEffect(() => {
@@ -234,12 +288,18 @@ export default function DonateItemPage() {
         return
       }
 
-      // Call backend to update the item details for this QR code
-      await updateItemDetails({
-        qr_code_id: qrCodeId,
+      // Create a new item document aligned with the scanned QR id
+      const name = productInfo?.productName || 'Donated Item'
+      await createDonationItem({
+        name,
         description: form.description,
         owner_email: selectedBiz.email,
         file: form.photo,
+        qr_code_id: qrCodeId,
+        donor_uid: user?.uid || null,
+        donor_email: user?.email || null,
+        date: form.date,
+        time: form.timeSlot,
       })
 
       console.log('Donation update submitted:', { qrCodeId, productInfo, business: selectedBiz.email })
@@ -265,8 +325,8 @@ export default function DonateItemPage() {
                 CIRCULARITY PASSPORT
               </h2>
               <div className="flex flex-col md:flex-row gap-6">
-                <div className="flex-shrink-0 w-full md:w-2/5">
-                  <div className="w-full aspect-[3/4] bg-white border border-gray-400 p-1 shadow-inner relative">
+                <div className="shrink-0 w-full md:w-2/5">
+                  <div className="w-full aspect-3/4 bg-white border border-gray-400 p-1 shadow-inner relative">
                     <QrCodeScannerComponent onScanSuccess={handleScanSuccess} />
                     <p className="absolute bottom-0 left-0 right-0 text-center text-xs bg-gray-100 py-0.5 text-gray-700 font-mono">
                       QR-SCAN-AREA
@@ -279,7 +339,7 @@ export default function DonateItemPage() {
                     If Camera Fails, Try Reloading
                   </button>
                 </div>
-                <div className="flex-grow md:w-3/5 space-y-2 text-sm">
+                <div className="grow md:w-3/5 space-y-2 text-sm">
                   <PassportField label="DOCUMENT TYPE" value="ITEM DONATION" />
                   <PassportField label="ITEM ID" value="AA0000000" isPlaceholder={true} />
                   <h3 className="text-lg font-semibold text-red-700 pt-2 mb-1">SCAN PRODUCT QR CODE</h3>
@@ -450,8 +510,7 @@ export default function DonateItemPage() {
           <div className="text-6xl mb-4">🎉</div>
           <h1 className="text-2xl font-semibold text-gray-800">Donation Submitted!</h1>
           <p className="text-gray-700 text-lg">
-            Thank you for giving your <span className="font-semibold text-indigo-600">'{productInfo?.productName}'</span> a second life!
-            When a new owner is found, points will be awarded to your account!
+            Thank you for giving your <span className="font-semibold text-indigo-600">'{productInfo?.productName}'</span> a second life! 20 points were awarded to your account.
           </p>
           <div className="pt-4">
             <button
