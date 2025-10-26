@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
 from typing import List, Dict, Any, Optional
 from models.retailer import Retailer, RetailerCreate
 from db.firestore_client import db
@@ -103,16 +103,35 @@ def retailers_nearby(address: str = Query(...), limit: int = Query(20, ge=1, le=
 # Create item for retailer (QR + item record)
 # ----------------------------
 @router.post("/create_item")
-def create_item_for_retailer(
-    name: str,
-    description: str,
-    retailer_email: str,
-    image_url: str | None = None
+async def create_item_for_retailer(
+    name: str = Form(...),
+    description: str = Form(...),
+    retailer_email: str = Form(...),
+    file: Optional[UploadFile] = File(None)
 ):
+    """
+    Allows a retailer to create a product listing.
+    - Uploads image to Cloudinary
+    - Generates QR code
+    - Stores in Firestore under 'retailer_items'
+    """
+
     # ✅ Check retailer exists
     retailer_doc = db.collection("retailers").document(retailer_email).get()
     if not retailer_doc.exists:
         raise HTTPException(status_code=404, detail="Retailer not found")
+
+    # ✅ Upload image to Cloudinary (if provided)
+    image_url = None
+    if file:
+        try:
+            file_content = await file.read()
+            public_id = f"retailer_items/{uuid.uuid4()}"
+            upload_result = upload_file(file_content, public_id)
+            image_url = upload_result.get("secure_url")
+        except Exception as e:
+            print("Cloudinary upload failed:", e)
+            raise HTTPException(status_code=400, detail="Image upload failed")
 
     # ✅ Generate a new QR code ID for the item
     qr_code_id = str(uuid.uuid4())
@@ -125,10 +144,9 @@ def create_item_for_retailer(
         "owner_email": retailer_email,
         "status": "available",
         "image_url": image_url,
-        # remove the business_email link entirely
-        "created_by": "retailer",
+        "created_by": "retailer"
     }
-    db.collection("items").document(qr_code_id).set(item_data)
+    db.collection("retailer_items").document(qr_code_id).set(item_data)
 
     # ✅ Generate QR code with embedded data
     qr_payload = {"qr_code_id": qr_code_id, "retailer_email": retailer_email}
@@ -137,15 +155,16 @@ def create_item_for_retailer(
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
 
-    # ✅ Convert QR to base64 for frontend display
+    # ✅ Convert QR code image to Base64 for frontend display
     buffered = io.BytesIO()
     img.save(buffered, format="PNG")
     qr_base64 = base64.b64encode(buffered.getvalue()).decode()
 
     return {
-        "message": "Item created successfully",
+        "message": "Retail item created successfully",
         "qr_code_id": qr_code_id,
         "qr_code_base64": qr_base64,
+        "image_url": image_url
     }
 # ----------------------------
 # Scan item QR (awards points + updates item)
