@@ -21,6 +21,10 @@ export default function SignupPage() {
     setError(null)
     setLoading(true)
     try {
+      // Basic client-side validation to avoid common 400s (e.g., Firebase requires >= 6 chars)
+      if ((password || '').length < 6) {
+        throw new Error('Password must be at least 6 characters')
+      }
       // Call backend to create account based on role
       if (role === 'tourist') {
         await registerTourist({ username, email, password })
@@ -36,10 +40,11 @@ export default function SignupPage() {
       const token = await getIdToken()
       const profile = await getLoginProfileWithToken(token)
       console.log('Registered profile:', profile)
-      navigate('/dashboard')
+      navigate('/')
     } catch (err) {
-      console.error(err)
-      setError(err.message || 'Failed to register')
+      console.error('Signup failed:', err)
+      const serverDetail = err?.response?.data?.detail
+      setError(serverDetail || err.message || 'Failed to register')
     } finally {
       setLoading(false)
     }

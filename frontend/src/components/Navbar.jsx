@@ -18,7 +18,7 @@ export default function Navbar() {
   return (
     <nav className="w-full bg-white/80 backdrop-blur border-b border-gray-200 sticky top-0 z-50">
       <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-        <Link to="/dashboard" className="text-xl font-semibold">Waypost</Link>
+  <Link to="/" className="text-xl font-semibold">Waypost</Link>
         <div className="flex items-center gap-4">
           {role === 'business' ? (
             <Link to="/business-dashboard" className="text-gray-700 hover:text-black">Business Dashboard</Link>
@@ -26,7 +26,9 @@ export default function Navbar() {
             <Link to="/dashboard" className="text-gray-700 hover:text-black">Dashboard</Link>
           )}
           <Link to="/points" className="text-gray-700 hover:text-black">Points</Link>
-          <Link to="/donate" className="text-gray-700 hover:text-black">Donate Item</Link>
+          {role === 'tourist' && (
+            <Link to="/donate" className="text-gray-700 hover:text-black">Donate Item</Link>
+          )}
           {user ? (
             <>
               <span className="text-sm text-gray-700 mr-2">Hi, {user.displayName || user.email}</span>

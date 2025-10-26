@@ -6,6 +6,7 @@ import BusinessDashboardPage from './pages/BusinessDashboardPage'
 import PointsPage from './pages/PointsPage'
 import DonateItemPage from './pages/DonateItemPage'
 import SignupPage from './pages/SignupPage'
+import HomePage from './pages/HomePage'
 
 
 function App() {
@@ -18,8 +19,8 @@ function App() {
   <Route path="/business-dashboard" element={<BusinessDashboardPage />} />
         <Route path="/points" element={<PointsPage />} />
         <Route path="/donate" element={<DonateItemPage />} />
-        <Route path="/signup" element={<SignupPage />} />
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+  <Route path="/signup" element={<SignupPage />} />
+  <Route path="/" element={<HomePage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </div>

@@ -17,9 +17,7 @@ export default function LoginPage() {
     try {
       await signInWithEmail(email, password)
       const token = await getIdToken()
-      const profile = await getProfileWithToken(token)
-      console.log('Profile:', profile)
-      navigate('/dashboard')
+      navigate('/')
     } catch (err) {
       console.error(err)
       setError(err.message || 'Failed to sign in')

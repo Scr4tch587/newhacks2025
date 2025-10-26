@@ -203,6 +203,16 @@ export default function DonateItemPage() {
     setForm(f => ({ ...f, photo: file }))
   }
 
+  // Format location option text: truncate long addresses so distance stays visible
+  const formatLocationOption = (loc) => {
+    const name = loc?.name || loc?.email || loc?.id || 'Location'
+    const addr = String(loc?.address || '')
+    const truncated = addr.length > 40 ? addr.slice(0, 40) + '…' : addr
+    const distVal = typeof loc?.distance_km === 'number' ? loc.distance_km.toFixed(1) : loc?.distance_km
+    const dist = distVal != null && distVal !== '' ? ` (${distVal} km)` : ''
+    return `${name} - ${truncated}${dist}`
+  }
+
   const submit = async (e) => {
     e.preventDefault()
     if (!form.description || !form.photo || !form.dropoffLocation || !form.date || !form.timeSlot) {
@@ -333,25 +343,25 @@ export default function DonateItemPage() {
               {suggestionLoading && <div className="text-xs text-gray-500 mt-1">Looking up addresses…</div>}
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">Drop-off Location *</label>
-              <select
-                name="dropoffLocation"
-                value={form.dropoffLocation}
-                onChange={handleChange}
-                className="w-full border rounded px-3 py-2"
-                disabled={!selectedAddress}
-                required
-              >
-                <option value="">{selectedAddress ? 'Select a location' : 'Select an address first'}</option>
-                {selectedAddress && loadingLocations && <option value="" disabled>Loading nearby locations…</option>}
-                {selectedAddress && !loadingLocations && locations.map(loc => (
-                  <option key={loc.id} value={loc.id}>
-                    {loc.name} - {loc.address} ({loc.distance_km} km)
-                  </option>
-                ))}
-              </select>
-            </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Drop-off Location *</label>
+          <select
+            name="dropoffLocation"
+            value={form.dropoffLocation}
+            onChange={handleChange}
+            className="w-full border rounded px-3 py-2"
+            disabled={!selectedAddress}
+            required
+          >
+            <option value="">{selectedAddress ? 'Select a location' : 'Select an address first'}</option>
+            {selectedAddress && loadingLocations && <option value="" disabled>Loading nearby locations…</option>}
+            {selectedAddress && !loadingLocations && locations.map(loc => (
+              <option key={loc.id} value={loc.id}>
+                {formatLocationOption(loc)}
+              </option>
+            ))}
+          </select>
+        </div>
 
             <div>
               <label className="block text-sm font-medium mb-1">Drop-off Date *</label>

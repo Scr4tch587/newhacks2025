@@ -10,7 +10,7 @@ from geopy.geocoders import Nominatim
 from math import radians, sin, cos, asin, sqrt
 from datetime import datetime
 from fastapi import Depends
-# Note: transactions endpoints intentionally unauthenticated per request
+from routers.login import verify_token
 
 
 router = APIRouter(prefix="/businesses", tags=["Businesses"])
@@ -67,7 +67,10 @@ def _resolve_business_doc_ref(identifier: str):
     return None
 
 @router.get("/transactions")
-def list_business_transactions(identifier: str = Query(..., description="Business identifier (doc id, uid or email)")):
+def list_business_transactions(
+    identifier: str = Query(..., description="Business identifier (doc id, uid or email)"),
+    uid: str = Depends(verify_token),
+):
     """Return transactions scheduled at the business location.
 
     Requires a verified Firebase ID token.
@@ -81,10 +84,21 @@ def list_business_transactions(identifier: str = Query(..., description="Busines
         coll = doc_ref.collection("transactions")
         docs = coll.stream()
         res = []
+
+        # Determine current user's display name (fallback to email)
+        try:
+            user_record = auth.get_user(uid)
+            current_name = (user_record.display_name or user_record.email or "").strip()
+        except Exception:
+            current_name = ""
+
         for d in docs:
             item = d.to_dict() or {}
             item["id"] = d.id
-            res.append(item)
+            # Include only transactions where the 'name' equals the current user's name
+            tx_name = str(item.get("name") or "").strip()
+            if current_name and tx_name == current_name:
+                res.append(item)
         # Optionally sort by scheduled_time if present
         try:
             res.sort(key=lambda x: x.get("scheduled_time") or "")
@@ -177,16 +191,22 @@ def register_business(business: BusinessCreate):
             password=business.password,
             display_name=business.business_name
         )
-        # Save additional info to Firestore
-        db.collection("businesses").document(user_record.uid).set({
+        # Save Business class-shaped document to Firestore under the user's UID
+        # Conform to models.business.Business: name, email, points, address
+        business_doc = {
+            "name": business.business_name,
             "email": business.email,
-            "business_name": business.business_name,
+            "points": 0,
+            "address": business.address,
+            # extra bookkeeping fields
             "uid": user_record.uid,
             "role": "business",
-            "address": business.address,
-        })
+        }
+        db.collection("businesses").document(user_record.uid).set(business_doc)
         return {"message": "Business account created", "uid": user_record.uid}
     except Exception as e:
+        # Log to server console for debugging and return clear reason to client
+        print("Error creating business:", e)
         raise HTTPException(status_code=400, detail=str(e))
     
 @router.delete("/business/{uid}")
@@ -214,6 +234,17 @@ def add_business_transaction(transaction: BusinessTransaction, identifier: str =
         coll = doc_ref.collection("transactions")
         tx_ref = coll.document()  # auto-generated id
         data = transaction.model_dump() if hasattr(transaction, "model_dump") else dict(transaction)
+
+        # Force the transaction "name" to be the selected business's name
+        try:
+            biz_doc = doc_ref.get()
+            biz = biz_doc.to_dict() if biz_doc and biz_doc.exists else {}
+            business_name = (biz.get("name") or biz.get("business_name") or biz.get("email") or "").strip()
+            if business_name:
+                data["name"] = business_name
+        except Exception:
+            # If we can't resolve a business name, leave whatever caller sent
+            pass
 
         # Normalize and validate transaction_type
         tx_type = data.get("transaction_type")
