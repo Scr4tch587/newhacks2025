@@ -59,6 +59,19 @@ export async function getNearbyItems({ address, lat, lng, limit = 50 } = {}) {
   return data
 }
 
+export async function updateItemDetails({ qr_code_id, description, owner_email, file }) {
+  // Send multipart/form-data PATCH to /items
+  const formData = new FormData()
+  formData.append('qr_code_id', qr_code_id)
+  formData.append('description', description)
+  formData.append('owner_email', owner_email)
+  if (file) formData.append('file', file)
+  const { data } = await api.patch('/items', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+  return data
+}
+
 export async function registerTourist(payload) {
   console.log({ username: payload.username, email: payload.email, password: payload.password })
   const { data } = await api.post('/tourists/register', payload)
@@ -98,6 +111,24 @@ export async function getLoginProfileWithToken(idToken) {
 export async function getProfileWithToken(idToken) {
   if (!idToken) return null
   const { data } = await api.get('/tourists/profile', { headers: { Authorization: `Bearer ${idToken}` } })
+  return data
+}
+
+// Retail profiles
+export async function getRetailProfilesByEmail(email) {
+  if (!email) return []
+  const { data } = await api.get('/retailers/profiles', { params: { email } })
+  return Array.isArray(data) ? data : []
+}
+
+export async function createRetailProfile({ name, description, file }, idToken) {
+  const formData = new FormData()
+  formData.append('name', name)
+  formData.append('description', description)
+  if (file) formData.append('image', file)
+  const headers = { 'Content-Type': 'multipart/form-data' }
+  if (idToken) headers['Authorization'] = `Bearer ${idToken}`
+  const { data } = await api.post('/retailers/profiles', formData, { headers })
   return data
 }
 

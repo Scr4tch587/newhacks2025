@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional
 from models.retailer import Retailer, RetailerCreate
 from routers.login import verify_token
 from db.firestore_client import db
+from db.firestore_auth import auth
 from passlib.context import CryptContext
 from geopy.geocoders import Nominatim
 from math import radians, sin, cos, asin, sqrt
@@ -46,32 +47,49 @@ def _geocode_address(address: str) -> Optional[Dict[str, float]]:
 # ----------------------------
 @router.post("/register")
 def register_retailer(retailer: RetailerCreate):
-    # Clean and validate password
-    password = retailer.password.strip()
-    if len(password.encode("utf-8")) > 72:
-        password = password.encode("utf-8")[:72].decode("utf-8", errors="ignore")
+    """Create a Firebase Auth user for the retailer and persist a retailer profile document.
+    The retailer Firestore document is keyed by email for backward compatibility and includes the Firebase uid.
+    """
+    # Clean password (Firebase supports up to 128 chars; we still sanitize whitespace)
+    password = (retailer.password or "").strip()
+    if not password:
+        raise HTTPException(status_code=400, detail="Password is required")
 
-    try:
-        hashed_pw = pwd_context.hash(password)
-    except Exception as e:
-        print(f"Password hashing failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Password hashing failed: {str(e)}")
-
-    # Check for duplicates
+    # Check if a retailer doc already exists under this email
     doc_ref = db.collection("retailers").document(retailer.email)
     if doc_ref.get().exists:
         raise HTTPException(status_code=400, detail="Retailer already exists")
 
-    # Save retailer
-    doc_ref.set({
-        "name": retailer.name,
-        "email": retailer.email,
-        "password": hashed_pw,
-        "address": retailer.address,
-        "points": 0
-    })
+    # Create Firebase Auth user
+    try:
+        user_record = auth.create_user(
+            email=retailer.email,
+            password=password,
+            display_name=retailer.name,
+        )
+    except Exception as e:
+        # If Firebase rejects, do not write any Firestore document
+        raise HTTPException(status_code=400, detail=str(e))
 
-    return {"message": "Retailer registered successfully"}
+    # Save retailer profile document (keyed by email; include uid and role for consistency)
+    try:
+        doc_ref.set({
+            "name": retailer.name,
+            "email": retailer.email,
+            "address": retailer.address,
+            "points": 0,
+            "uid": user_record.uid,
+            "role": "retailer",
+        })
+    except Exception:
+        # Best-effort rollback of the auth user if Firestore write fails
+        try:
+            auth.delete_user(user_record.uid)
+        except Exception:
+            pass
+        raise
+
+    return {"message": "Retailer account created", "uid": user_record.uid}
 
 @router.delete("/{retailer_email}")
 def delete_retailer(retailer_email: str, logged_in_uid: str = Depends(verify_token)):
@@ -217,37 +235,64 @@ def delete_retail_item(qr_code_id: str, logged_in_uid: str = Depends(verify_toke
     return {"message": f"Retail item {qr_code_id} deleted successfully"}
 
 
-@router.post("/create_retail_profile")
-def create_retail_profile(
-    retailer_email: str,
-    store_name: str,
-    description: str,
-    address: str,
-    image: UploadFile = File(None)
+@router.get("/profiles")
+def list_retail_profiles(email: str = Query(...)):
+    """List retail profiles owned by the given retailer email."""
+    q = db.collection("retail_profiles").where("retailer_email", "==", email)
+    return [doc.to_dict() for doc in q.stream()]
+
+@router.post("/profiles")
+async def create_retail_profile(
+    name: str = Form(...),
+    description: str = Form(...),
+    image: Optional[UploadFile] = File(None),
+    uid: str = Depends(verify_token),
 ):
-    # Check retailer exists
+    """Create a retail profile for the logged-in retailer.
+    - Derives retailer email from Firebase uid
+    - Uploads image to Cloudinary and stores the URL
+    - Stores profile under 'retail_profiles'
+    """
+    # Resolve caller's email from uid
+    try:
+        user_record = auth.get_user(uid)
+        retailer_email = user_record.email
+    except Exception:
+        retailer_email = None
+    if not retailer_email:
+        raise HTTPException(status_code=400, detail="Could not resolve retailer email")
+
+    # Ensure retailer exists
     retailer_doc = db.collection("retailers").document(retailer_email).get()
     if not retailer_doc.exists:
-        raise HTTPException(status_code=404, detail="Retailer not found")
+        # Fallback: try lookup by uid field
+        matches = list(db.collection("retailers").where("uid", "==", uid).limit(1).stream())
+        if not matches:
+            raise HTTPException(status_code=404, detail="Retailer not found")
 
-    # Upload optional store image
+    # Upload image (optional)
     image_url = None
-    if image:
-        image_url = upload_file(image)  # Using your Cloudinary uploader
+    if image is not None:
+        try:
+            content = await image.read()
+            public_id = f"retail_profiles/{uuid.uuid4()}"
+            result = upload_file(content, public_id)
+            image_url = result.get("secure_url")
+        except Exception as e:
+            print("Cloudinary upload failed:", e)
+            raise HTTPException(status_code=400, detail="Image upload failed")
 
-    # Create store profile
     store_id = str(uuid.uuid4())
-    db.collection("retail_profiles").document(store_id).set({
+    data = {
         "store_id": store_id,
         "retailer_email": retailer_email,
-        "store_name": store_name,
+        "name": name,
         "description": description,
-        "address": address,
         "image_url": image_url,
-        "points": 0
-    })
-
-    return {"message": "Retail profile created successfully", "store_id": store_id}
+        "points": 0,
+    }
+    db.collection("retail_profiles").document(store_id).set(data)
+    return {"message": "Retail profile created successfully", "store_id": store_id, "profile": data}
 
 
 @router.delete("/profile/{store_id}")

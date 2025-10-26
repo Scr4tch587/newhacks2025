@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Html5Qrcode } from 'html5-qrcode'
 import { fetchProductByQRCode, getAvailableTimeSlots, getAvailableDates } from '../utils/DonationAPI'
-import { getNearbyBusinesses } from '../utils/FastAPIClient'
+import { getNearbyBusinesses, updateItemDetails } from '../utils/FastAPIClient'
 import passportBg from "../images/passportbackground.jpg"  // 👈 background import
 
 // --- HELPER COMPONENT ---
@@ -223,8 +223,32 @@ export default function DonateItemPage() {
       alert('Please select an address from the suggestions before continuing')
       return
     }
-    console.log('Submitting donation:', { qrCodeId, productInfo, ...form })
-    setStep('success')
+    try {
+      const selectedBiz = locations.find((l) => l.id === form.dropoffLocation)
+      if (!selectedBiz || !selectedBiz.email) {
+        alert('Could not determine selected business email. Please choose a different location.')
+        return
+      }
+      if (!qrCodeId) {
+        alert('QR Code is missing. Please go back and rescan the item QR code.')
+        return
+      }
+
+      // Call backend to update the item details for this QR code
+      await updateItemDetails({
+        qr_code_id: qrCodeId,
+        description: form.description,
+        owner_email: selectedBiz.email,
+        file: form.photo,
+      })
+
+      console.log('Donation update submitted:', { qrCodeId, productInfo, business: selectedBiz.email })
+      setStep('success')
+    } catch (err) {
+      console.error('Failed to submit donation update', err)
+      const msg = err?.response?.data?.detail || err?.message || 'Failed to submit donation. Please try again.'
+      alert(msg)
+    }
   }
 
   return (

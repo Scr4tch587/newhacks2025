@@ -41,7 +41,8 @@ def _geocode_address(address: str) -> Optional[Dict[str, float]]:
     except Exception:
         return None
 
-@router.post("/")
+
+@router.post("/cloudinary")
 async def create_item(
     name: str = Form(...),
     description: str = Form(...),
@@ -106,6 +107,7 @@ async def create_item(
         "qr_code_base64": qr_base64,
         "image_url": image_url,
     }
+
 @router.get("/")
 def list_items():
     return [doc.to_dict() for doc in db.collection("items").stream()]
@@ -216,4 +218,69 @@ def delete_item(qr_code_id: str, logged_in_uid: str = Depends(verify_token)):
     doc_ref.delete()
     return {"message": f"Item {qr_code_id} deleted successfully"}
 
+@router.patch("/")
+async def update_item_details(
+    qr_code_id: str = Form(...),
+    description: str = Form(...),
+    owner_email: str = Form(...),
+    file: Optional[UploadFile] = File(None),
+):
+    """
+    Update an existing item (matched by qr_code_id):
+    - Set description to provided description
+    - Upload provided image file to Cloudinary and store its URL
+    - Set owner_email to the selected business' email
+    Returns updated fields.
+    """
 
+    # Ensure the item exists
+    item_ref = db.collection("items").document(qr_code_id)
+    item_doc = item_ref.get()
+    if not item_doc.exists:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    # Ensure the new owner is a known business
+    biz_doc = db.collection("businesses").document(owner_email).get()
+    if not biz_doc.exists:
+        # Also support lookups where the Firestore doc id is UID and email is stored in the field
+        q = db.collection("businesses").where("email", "==", owner_email).limit(1)
+        matches = list(q.stream())
+        if matches:
+            # Use the matched document reference as owner
+            pass
+        else:
+            raise HTTPException(status_code=404, detail="Selected business not found")
+
+    image_url: Optional[str] = None
+    if file is not None:
+        try:
+            file_content = await file.read()
+            # Prefer a deterministic public_id so subsequent updates replace the old asset
+            public_id = f"items/{qr_code_id}"
+            result = upload_file(file_content, public_id)
+            image_url = result.get("secure_url")
+            if not image_url:
+                raise Exception("Cloudinary upload returned no secure_url")
+        except Exception as e:
+            print("Cloudinary upload failed:", e)
+            raise HTTPException(status_code=400, detail="Image upload failed")
+
+    update_data: Dict[str, Any] = {
+        "description": description,
+        "owner_email": owner_email,
+    }
+    # For compatibility with different consumers, store under both keys
+    if image_url:
+        update_data["image_url"] = image_url
+        update_data["image_link"] = image_url
+
+    try:
+        item_ref.update(update_data)
+        updated = item_ref.get().to_dict()
+        return {
+            "message": "Item updated successfully",
+            "qr_code_id": qr_code_id,
+            "item": updated,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

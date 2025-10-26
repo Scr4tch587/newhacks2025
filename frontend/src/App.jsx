@@ -3,6 +3,7 @@ import Navbar from './components/Navbar'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import BusinessDashboardPage from './pages/BusinessDashboardPage'
+import RetailDashboardPage from './pages/RetailDashboardPage'
 import PointsPage from './pages/PointsPage'
 import DonateItemPage from './pages/DonateItemPage'
 import SignupPage from './pages/SignupPage'
@@ -17,6 +18,7 @@ function App() {
         <Route path="/login" element={<LoginPage />} />
   <Route path="/dashboard" element={<DashboardPage />} />
   <Route path="/business-dashboard" element={<BusinessDashboardPage />} />
+  <Route path="/retail-dashboard" element={<RetailDashboardPage />} />
         <Route path="/points" element={<PointsPage />} />
         <Route path="/donate" element={<DonateItemPage />} />
   <Route path="/signup" element={<SignupPage />} />

@@ -11,3 +11,10 @@ class RetailerCreate(BaseModel):
     email: EmailStr
     password: str
     address: str
+
+class RetailProfile(BaseModel):
+    retailer_email: str
+    item_name: str
+    description: str
+    address: str
+    image_url: str

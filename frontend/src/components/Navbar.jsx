@@ -21,9 +21,13 @@ export default function Navbar() {
   <Link to="/" className="text-xl font-semibold">Waypost</Link>
         <div className="flex items-center gap-4">
           {role === 'business' ? (
-            // Business users: only show Business Dashboard in nav
+            // Business users: only Business Dashboard
             <Link to="/business-dashboard" className="text-gray-700 hover:text-black">Business Dashboard</Link>
+          ) : role === 'retailer' ? (
+            // Retailers: only Retail Dashboard
+            <Link to="/retail-dashboard" className="text-gray-700 hover:text-black">Retail Dashboard</Link>
           ) : (
+            // Tourists and unknown roles: show Dashboard/Points, and Donate for tourists
             <>
               <Link to="/dashboard" className="text-gray-700 hover:text-black">Dashboard</Link>
               <Link to="/points" className="text-gray-700 hover:text-black">Points</Link>
