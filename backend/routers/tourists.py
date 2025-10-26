@@ -94,3 +94,10 @@ def check_login(uid: str = Depends(verify_token)):
     """
     return {"logged_in": True, "uid": uid}
 
+@router.delete("/tourist/{uid}")
+def delete_tourist(uid: str, logged_in_uid: str = Depends(verify_token)):
+    doc_ref = db.collection("tourists").document(uid)
+    if not doc_ref.get().exists:
+        raise HTTPException(status_code=404, detail="Tourist not found")
+    doc_ref.delete()
+    return {"message": f"Tourist {uid} deleted successfully"}

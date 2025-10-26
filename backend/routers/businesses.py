@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Query, HTTPException, Depends, status
 from models.business import Business, BusinessCreate, BusinessTransaction
+from routers.login import verify_token
 from db.firestore_client import db
 from db.firestore_auth import auth
 from typing import List, Dict, Any, Optional
@@ -187,6 +188,14 @@ def register_business(business: BusinessCreate):
         return {"message": "Business account created", "uid": user_record.uid}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    
+@router.delete("/business/{uid}")
+def delete_business(uid: str, logged_in_uid: str = Depends(verify_token)):
+    doc_ref = db.collection("businesses").document(uid)
+    if not doc_ref.get().exists:
+        raise HTTPException(status_code=404, detail="Business not found")
+    doc_ref.delete()
+    return {"message": f"Business {uid} deleted successfully"}
 
 # Add a transaction for a business (pickup/dropoff scheduled at the business location)
 @router.post("/transactions", status_code=status.HTTP_201_CREATED)
@@ -284,3 +293,4 @@ def _geocode_address(address: str) -> Optional[Dict[str, float]]:
         return {"lat": loc.latitude, "lng": loc.longitude}
     except Exception:
         return None
+    

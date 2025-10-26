@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Query, UploadFile, File, HTTPException, Form
+from fastapi import APIRouter, Query, UploadFile, File, HTTPException, Form, Depends
 from models.item import Item
+from routers.login import verify_token
 from db.firestore_client import db
 from typing import List, Dict, Any, Optional
 from geopy.geocoders import Nominatim
@@ -182,7 +183,6 @@ def pickup_item(qr_code_id: str, tourist_email: str):
 
 
 
-
 @router.post("/dropoff/{qr_code_id}/{business_email}")
 def dropoff_item(qr_code_id: str, business_email: str):
     business_doc = db.collection("businesses").document(business_email).get()
@@ -206,4 +206,14 @@ def dropoff_item(qr_code_id: str, business_email: str):
     db.collection("items").document(qr_code_id).update({"status": "available", "owner_email": business_email})
 
     return {"message": f"{qr_code_id} dropped off at {business_email}"}
+
+
+@router.delete("/item/{qr_code_id}")
+def delete_item(qr_code_id: str, logged_in_uid: str = Depends(verify_token)):
+    doc_ref = db.collection("items").document(qr_code_id)
+    if not doc_ref.get().exists:
+        raise HTTPException(status_code=404, detail="Item not found")
+    doc_ref.delete()
+    return {"message": f"Item {qr_code_id} deleted successfully"}
+
 
