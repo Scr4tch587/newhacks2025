@@ -1,10 +1,13 @@
-from fastapi import APIRouter, Query, HTTPException, Depends
-from models.business import Business, BusinessCreate
+from fastapi import APIRouter, Query, HTTPException, Depends, status
+from models.business import Business, BusinessCreate, BusinessTransaction
 from db.firestore_client import db
 from db.firestore_auth import auth
 from typing import List, Dict, Any, Optional
 from geopy.geocoders import Nominatim
 from math import radians, sin, cos, asin, sqrt
+from datetime import datetime
+from fastapi import Depends
+from deps import verify_firebase_token
 
 
 router = APIRouter(prefix="/businesses", tags=["Businesses"])
@@ -110,6 +113,70 @@ def get_business(uid: str):
         raise HTTPException(status_code=404, detail="Business not found")
     return doc.to_dict()
 
+
+# Add a transaction for a business (pickup/dropoff scheduled at the business location)
+@router.post("/{uid}/transactions", status_code=status.HTTP_201_CREATED)
+def add_business_transaction(uid: str, transaction: BusinessTransaction, token: dict = Depends(verify_firebase_token)):
+    """
+    Create a new business transaction record under the business document.
+    Request body should match models.business.BusinessTransaction.
+    """
+    # Ensure business exists
+    biz_doc = db.collection("businesses").document(uid).get()
+    if not biz_doc.exists:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+        # Persist the transaction under a subcollection 'transactions'
+    try:
+        coll = db.collection("businesses").document(uid).collection("transactions")
+        doc_ref = coll.document()  # auto-generated id
+        data = transaction.model_dump() if hasattr(transaction, "model_dump") else dict(transaction)
+
+        # Normalize and validate transaction_type
+        tx_type = data.get("transaction_type")
+        if tx_type:
+            tx_type_clean = str(tx_type).strip().lower()
+            if tx_type_clean not in ("pickup", "dropoff"):
+                raise HTTPException(status_code=400, detail="transaction_type must be 'Pickup' or 'Dropoff'")
+            data["transaction_type"] = tx_type_clean.title()
+
+        # If date and time are provided, try to build an ISO scheduled_time
+        date_str = data.get("date")
+        time_str = data.get("time")
+        if date_str and time_str:
+            try:
+                # Accept common formats like 'YYYY-MM-DD' and 'HH:MM' (24h)
+                dt = None
+                combined = f"{date_str} {time_str}"
+                try:
+                    dt = datetime.fromisoformat(f"{date_str}T{time_str}")
+                except Exception:
+                    # Fallback to parsing common format
+                    dt = datetime.strptime(combined, "%Y-%m-%d %H:%M")
+                # Store as ISO (assume input is local/naive — append Z to indicate UTC if you prefer)
+                data["scheduled_time"] = dt.isoformat()
+            except Exception:
+                # If parsing fails, leave date/time as-is but do not block creation
+                data["scheduled_time"] = None
+
+        # Attach server-side timestamp
+        data["created_at"] = datetime.utcnow().isoformat() + "Z"
+
+        # Record who created the transaction (from verified ID token)
+        try:
+            data["created_by_uid"] = token.get("uid")
+            # token may contain email/name
+            if token.get("email"):
+                data["created_by_email"] = token.get("email")
+            if token.get("name"):
+                data["created_by_name"] = token.get("name")
+        except Exception:
+            # non-fatal; continue without created_by fields
+            pass
+        doc_ref.set(data)
+        return {"message": "Transaction created", "id": doc_ref.id, "transaction": data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Great-circle distance between two points (in kilometers)."""
