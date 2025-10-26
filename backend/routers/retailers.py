@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form, Depends
 from typing import List, Dict, Any, Optional
 from models.retailer import Retailer, RetailerCreate
+from routers.login import verify_token
 from db.firestore_client import db
 from passlib.context import CryptContext
 from geopy.geocoders import Nominatim
@@ -71,6 +72,14 @@ def register_retailer(retailer: RetailerCreate):
     })
 
     return {"message": "Retailer registered successfully"}
+
+@router.delete("/{retailer_email}")
+def delete_retailer(retailer_email: str, logged_in_uid: str = Depends(verify_token)):
+    doc_ref = db.collection("retailers").document(retailer_email)
+    if not doc_ref.get().exists:
+        raise HTTPException(status_code=404, detail="Retailer not found")
+    doc_ref.delete()
+    return {"message": f"Retailer {retailer_email} deleted successfully"}
 
 # ----------------------------
 # Nearby retailers
@@ -199,6 +208,14 @@ def scan_item_qr(qr_code_id: str, scanner_email: str):
 
     return {"message": "Points awarded", "scanner_points": scanner_points}
 
+@router.delete("/item/{qr_code_id}")
+def delete_retail_item(qr_code_id: str, logged_in_uid: str = Depends(verify_token)):
+    doc_ref = db.collection("retailer_items").document(qr_code_id)
+    if not doc_ref.get().exists:
+        raise HTTPException(status_code=404, detail="Retail item not found")
+    doc_ref.delete()
+    return {"message": f"Retail item {qr_code_id} deleted successfully"}
+
 
 @router.post("/create_retail_profile")
 def create_retail_profile(
@@ -231,3 +248,14 @@ def create_retail_profile(
     })
 
     return {"message": "Retail profile created successfully", "store_id": store_id}
+
+
+@router.delete("/profile/{store_id}")
+def delete_retail_profile(store_id: str, logged_in_uid: str = Depends(verify_token)):
+    doc_ref = db.collection("retail_profiles").document(store_id)
+    if not doc_ref.get().exists:
+        raise HTTPException(status_code=404, detail="Retail profile not found")
+    doc_ref.delete()
+    return {"message": f"Retail profile {store_id} deleted successfully"}
+
+
