@@ -1,8 +1,35 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from models.item import Item
 from db.firestore_client import db
+from typing import List, Dict, Any, Optional
+from geopy.geocoders import Nominatim
+from math import radians, sin, cos, asin, sqrt
 
 router = APIRouter(prefix="/items", tags=["Items"])
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance between two points (in kilometers)."""
+    lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+    c = 2 * asin(sqrt(a))
+    r = 6371
+    return r * c
+
+
+_geocoder = Nominatim(user_agent="newhacks2025-backend")
+
+
+def _geocode_address(address: str) -> Optional[Dict[str, float]]:
+    try:
+        loc = _geocoder.geocode(address, timeout=10)
+        if not loc:
+            return None
+        return {"lat": loc.latitude, "lng": loc.longitude}
+    except Exception:
+        return None
 
 @router.post("/")
 def create_item(item: Item):
@@ -13,6 +40,60 @@ def create_item(item: Item):
 @router.get("/")
 def list_items():
     return [doc.to_dict() for doc in db.collection("items").stream()]
+
+
+@router.get("/nearby")
+def items_nearby(address: Optional[str] = Query(None, description="Address to compute proximity"), lat: Optional[float] = Query(None), lng: Optional[float] = Query(None), limit: int = Query(20, ge=1, le=100)) -> List[Dict[str, Any]]:
+    """
+    Return items whose owners are businesses with known addresses, sorted by distance to the given address or coordinates.
+    Either provide `lat` and `lng`, or `address` (string) to geocode.
+    Response items include qr_code_id as `id`, name, description, owner_email, address, lat, lng, distance_km.
+    """
+    origin = None
+    if lat is not None and lng is not None:
+        origin = {"lat": float(lat), "lng": float(lng)}
+    elif address:
+        origin = _geocode_address(address)
+
+    if not origin:
+        return []
+
+    results: List[Dict[str, Any]] = []
+    for doc in db.collection("items").stream():
+        item = doc.to_dict()
+        owner_email = item.get("owner_email")
+        if not owner_email:
+            continue
+
+        # Try to fetch owner business document
+        owner_doc = db.collection("businesses").document(owner_email).get()
+        if not owner_doc.exists:
+            # Skip items whose owners are not businesses or have no address
+            continue
+        owner = owner_doc.to_dict()
+        addr = owner.get("address")
+        if not addr:
+            continue
+
+        coords = _geocode_address(addr)
+        if not coords:
+            continue
+
+        dist_km = _haversine_km(origin["lat"], origin["lng"], coords["lat"], coords["lng"])
+
+        results.append({
+            "id": item.get("qr_code_id") or doc.id,
+            "name": item.get("name"),
+            "description": item.get("description"),
+            "owner_email": owner_email,
+            "address": addr,
+            "lat": coords["lat"],
+            "lng": coords["lng"],
+            "distance_km": round(dist_km, 2),
+        })
+
+    results.sort(key=lambda x: x["distance_km"])
+    return results[:limit]
 
 @router.get("/{qr_code_id}")
 def get_item(qr_code_id: str):

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import MapComponent from '../components/MapComponent'
 import MapSidebar from '../components/MapSidebar'
 import ListingDetailModal from '../components/ListingDetailModal'
-import { fetchItems, fetchOwnerLocation } from '../utils/FakeAPI'
+import { getNearbyItems } from '../utils/FastAPIClient'
 
 export default function DashboardPage() {
   const [listings, setListings] = useState([])
@@ -27,22 +27,13 @@ export default function DashboardPage() {
     }
 
     (async () => {
-      // 1) Load items and their owner locations
-      const items = await fetchItems()
-      const itemsWithLocation = await Promise.all(
-        items.map(async (item) => {
-          const loc = await fetchOwnerLocation(item.owner_email)
-          return loc ? { ...item, lat: loc.lat, lng: loc.lng } : item
-        })
-      )
-
-      // 2) Try to get user's current location; fallback to Toronto downtown
-      let origin = { lat: 43.653, lng: -79.383 }
+      // Get user's current location; fallback to Toronto downtown
+      let originLoc = { lat: 43.653, lng: -79.383 }
       if (typeof navigator !== 'undefined' && navigator.geolocation) {
         await new Promise((resolve) => {
           navigator.geolocation.getCurrentPosition(
             (pos) => {
-              origin = { lat: pos.coords.latitude, lng: pos.coords.longitude }
+              originLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude }
               resolve()
             },
             () => resolve(),
@@ -51,15 +42,25 @@ export default function DashboardPage() {
         })
       }
 
-      // 3) Compute distance and sort
-      const withDistance = itemsWithLocation.map((it) =>
-        it.lat != null && it.lng != null
-          ? { ...it, distanceKm: haversineKm(origin.lat, origin.lng, it.lat, it.lng) }
-          : { ...it, distanceKm: Number.POSITIVE_INFINITY }
-      )
-      withDistance.sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity))
-      setListings(withDistance)
-      setOrigin(origin)
+      // Ask backend for nearby items using coordinates (backend will geocode business owners)
+      try {
+        const items = await getNearbyItems({ lat: originLoc.lat, lng: originLoc.lng, limit: 100 })
+        // backend returns { id, name, description, lat, lng, distance_km }
+        const mapped = (items || []).map((it) => ({
+          id: it.id,
+          qr_code_id: it.id,
+          name: it.name,
+          title: it.name,
+          description: it.description,
+          lat: it.lat,
+          lng: it.lng,
+          distanceKm: it.distance_km != null ? it.distance_km : (it.distanceKm ?? undefined),
+        }))
+        setListings(mapped)
+        setOrigin(originLoc)
+      } catch (e) {
+        console.error('Failed to load nearby items', e)
+      }
     })()
   }, [])
 

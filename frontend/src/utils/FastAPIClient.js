@@ -32,4 +32,17 @@ export async function getNearbyBusinesses(address, limit = 20) {
   return data
 }
 
+export async function getNearbyItems({ address, lat, lng, limit = 50 } = {}) {
+  // Accept either address or lat/lng. Return [] if none provided.
+  if ((!address || !address.trim()) && (lat == null || lng == null)) return []
+  const params = { limit }
+  if (address && address.trim()) params.address = address
+  if (lat != null && lng != null) {
+    params.lat = lat
+    params.lng = lng
+  }
+  const { data } = await api.get('/items/nearby', { params })
+  return data
+}
+
 export default api

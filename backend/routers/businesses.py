@@ -18,6 +18,48 @@ def list_businesses():
     docs = db.collection("businesses").stream()
     return [doc.to_dict() for doc in docs]
 
+@router.get("/nearby")
+def businesses_nearby(address: str = Query(..., description="User's address to compute proximity"), limit: int = Query(20, ge=1, le=100)) -> List[Dict[str, Any]]:
+    """
+    Return businesses sorted by distance to the given address.
+    Response items include name, email, address, and distance_km.
+    """
+    origin = _geocode_address(address)
+    if not origin:
+        # Could not geocode the user's address; return empty list so frontend shows no locations
+        return []
+
+    results: List[Dict[str, Any]] = []
+
+    # Iterate documents and compute distance. If a business document already contains
+    # cached coordinates ('lat' and 'lng'), use them. Otherwise attempt to geocode
+    # the business address and write the coords back to Firestore for future calls.
+    for doc in db.collection("businesses").stream():
+        business = doc.to_dict()
+        addr = business.get("address")
+        name = business.get("name")
+        email = business.get("email")
+        if not addr or not name or not email:
+            continue
+
+        # Geocode the business address (Business model does not include lat/lng)
+        coords = _geocode_address(addr)
+        if not coords:
+            # Skip businesses we can't obtain coordinates for
+            continue
+
+        dist_km = _haversine_km(origin["lat"], origin["lng"], coords["lat"], coords["lng"])
+        results.append({
+            "id": doc.id,
+            "name": name,
+            "email": email,
+            "address": addr,
+            "distance_km": round(dist_km, 2),
+        })
+
+    results.sort(key=lambda x: x["distance_km"])  # nearest first
+    return results[:limit]
+
 @router.get("/{email}")
 def get_business(email: str):
     doc = db.collection("businesses").document(email).get()
@@ -59,37 +101,3 @@ def _geocode_address(address: str) -> Optional[Dict[str, float]]:
         return {"lat": loc.latitude, "lng": loc.longitude}
     except Exception:
         return None
-
-
-@router.get("/nearby")
-def businesses_nearby(address: str = Query(..., description="User's address to compute proximity"), limit: int = Query(20, ge=1, le=100)) -> List[Dict[str, Any]]:
-    """
-    Return businesses sorted by distance to the given address.
-    Response items include name, email, address, and distance_km.
-    """
-    origin = _geocode_address(address)
-    if not origin:
-        return []
-
-    results: List[Dict[str, Any]] = []
-    for doc in db.collection("businesses").stream():
-        business = doc.to_dict()
-        addr = business.get("address")
-        name = business.get("name")
-        email = business.get("email")
-        if not addr or not name or not email:
-            continue
-        coords = _geocode_address(addr)
-        if not coords:
-            continue
-        dist_km = _haversine_km(origin["lat"], origin["lng"], coords["lat"], coords["lng"])
-        results.append({
-            "id": email,  # doc id is email in this schema
-            "name": name,
-            "email": email,
-            "address": addr,
-            "distance_km": round(dist_km, 2),
-        })
-
-    results.sort(key=lambda x: x["distance_km"])  # nearest first
-    return results[:limit]
