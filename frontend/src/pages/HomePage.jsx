@@ -47,7 +47,7 @@ export default function HomePage() {
         <div className="absolute inset-0 bg-black/30"></div>
         <div className="relative z-10">
           <h2 className="text-4xl font-bold drop-shadow-lg">Tourists</h2>
-          <p className="mt-3 text-lg drop-shadow-md">Find items nearby and track your impact as you travel.</p>
+          <p className="mt-3 text-lg drop-shadow-md">Save expenses, space, and the environment on your trip</p>
           <Link to="/signup" className="mt-4 inline-block text-[#D2B48C] hover:text-white underline">
   Create account
 </Link>
@@ -68,7 +68,7 @@ export default function HomePage() {
         <div className="absolute inset-0 bg-black/30"></div>
         <div className="relative z-10">
           <h2 className="text-4xl font-bold drop-shadow-lg">Businesses</h2>
-          <p className="mt-3 text-lg drop-shadow-md">List items, schedule pickups, and earn points with ease.</p>
+          <p className="mt-3 text-lg drop-shadow-md">List items, schedule pickups, and find a community.</p>
           <Link to="/signup" className="mt-4 inline-block text-[#D2B48C] hover:text-white underline">
   Become a partner
 </Link>
@@ -89,7 +89,7 @@ export default function HomePage() {
         <div className="absolute inset-0 bg-black/30"></div>
         <div className="relative z-10">
           <h2 className="text-4xl font-bold drop-shadow-lg">Retailers</h2>
-          <p className="mt-3 text-lg drop-shadow-md">Scan items, award points, and grow your profile in the network.</p>
+          <p className="mt-3 text-lg drop-shadow-md">Make good products, award points, and grow your reputation in the network.</p>
           <Link to="/signup" className="mt-4 inline-block text-[#D2B48C] hover:text-white underline">
   Join the network
 </Link>
