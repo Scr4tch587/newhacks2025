@@ -1,12 +1,11 @@
 from fastapi import APIRouter, HTTPException, Depends
-from models.tourist import Tourist, TouristCreate
+from models.tourist import Tourist
+from models.tourist import TouristCreate
 from db.firestore_client import db
 from db.firestore_auth import auth
 
 
 router = APIRouter(prefix="/tourists", tags=["Tourists"])
-
-
 
 
 # Create a tourist
