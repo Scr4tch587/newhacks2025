@@ -1,8 +1,12 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { signInWithEmail } from '../utils/FirebaseAuth'
 import { registerTourist, registerBusiness, registerRetailer, getLoginProfileWithToken } from '../utils/FastAPIClient'
 import { getIdToken } from '../utils/FirebaseAuth'
+
+// import your background layers
+import sky from "../images/sky.png"
+import mountains from "../images/mountains.png"
 
 export default function SignupPage() {
   const navigate = useNavigate()
@@ -15,17 +19,22 @@ export default function SignupPage() {
   const [suggestionLoading, setSuggestionLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [scrollY, setScrollY] = useState(0)
+
+  useEffect(() => {
+    const handleScroll = () => setScrollY(window.scrollY)
+    window.addEventListener("scroll", handleScroll)
+    return () => window.removeEventListener("scroll", handleScroll)
+  }, [])
 
   const submit = async (e) => {
     e.preventDefault()
     setError(null)
     setLoading(true)
     try {
-      // Basic client-side validation to avoid common 400s (e.g., Firebase requires >= 6 chars)
       if ((password || '').length < 6) {
         throw new Error('Password must be at least 6 characters')
       }
-      // Call backend to create account based on role
       if (role === 'tourist') {
         await registerTourist({ username, email, password })
       } else if (role === 'business') {
@@ -35,7 +44,6 @@ export default function SignupPage() {
         if (!address) throw new Error('Please provide a location')
         await registerRetailer({ name: username, email, password, address })
       }
-      // Sign in client-side to obtain ID token
       await signInWithEmail(email, password)
       const token = await getIdToken()
       const profile = await getLoginProfileWithToken(token)
@@ -51,8 +59,22 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-gray-50">
-      <div className="bg-white p-8 rounded-2xl shadow-md w-96">
+    <div className="relative min-h-screen overflow-hidden flex items-center justify-center">
+      {/* === BACKGROUND WITH PARALLAX === */}
+      <img
+        src={sky}
+        alt="Sky background"
+        className="absolute inset-0 w-full h-full object-cover z-0"
+        style={{ transform: `translateY(${scrollY * 0.5}px)` }}
+      />
+      <img
+        src={mountains}
+        alt="Mountains"
+        className="absolute bottom-0 w-full object-cover z-10"
+      />
+
+      {/* === SIGNUP BOX === */}
+      <div className="relative z-30 bg-white p-8 rounded-2xl shadow-md w-96">
         <h1 className="text-2xl font-bold text-center mb-6 text-gray-800">Create Account</h1>
 
         {/* Role selector */}
@@ -103,7 +125,6 @@ export default function SignupPage() {
                   const val = e.target.value
                   setAddress(val)
                   if (!val || val.length < 3) { setSuggestions([]); return }
-                  // smart suggestions using Nominatim
                   try {
                     setSuggestionLoading(true)
                     const q = encodeURIComponent(val)
