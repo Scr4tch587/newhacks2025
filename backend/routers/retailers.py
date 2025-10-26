@@ -134,6 +134,7 @@ async def create_item_for_retailer(
     name: str = Form(...),
     description: str = Form(...),
     retailer_email: str = Form(...),
+    store_id: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None)
 ):
     """
@@ -173,12 +174,17 @@ async def create_item_for_retailer(
         "image_url": image_url,
         "created_by": "retailer"
     }
+    # Link this item back to the originating retail profile if provided
+    if store_id:
+        item_data["store_id"] = store_id
     db.collection("retailer_items").document(qr_code_id).set(item_data)
 
     # ✅ Generate QR code with embedded data
+    import json
     qr_payload = {"qr_code_id": qr_code_id}
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
-    qr.add_data(qr_payload)
+    # Ensure valid JSON content inside QR
+    qr.add_data(json.dumps(qr_payload))
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
 
@@ -193,6 +199,50 @@ async def create_item_for_retailer(
         "qr_code_base64": qr_base64,
         "image_url": image_url
     }
+
+# ----------------------------
+# Get a retail item by QR and include QR image (base64)
+# ----------------------------
+@router.get("/item/{qr_code_id}")
+def get_retail_item(qr_code_id: str):
+    doc = db.collection("retailer_items").document(qr_code_id).get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="Retail item not found")
+    item = doc.to_dict()
+
+    # Generate QR image (base64) on the fly for re-display/printing
+    try:
+        import json
+        qr_payload = {"qr_code_id": qr_code_id}
+        qr = qrcode.QRCode(version=1, box_size=10, border=5)
+        qr.add_data(json.dumps(qr_payload))
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        qr_base64 = base64.b64encode(buf.getvalue()).decode()
+    except Exception as e:
+        print("QR generation failed:", e)
+        qr_base64 = None
+
+    return {
+        "item": item,
+        "qr_code_id": qr_code_id,
+        "qr_code_base64": qr_base64,
+    }
+
+# ----------------------------
+# List items created from a retail profile
+# ----------------------------
+@router.get("/profile/{store_id}/items")
+def list_items_for_profile(store_id: str):
+    """List all retailer_items that were created from the given retail profile (by store_id)."""
+    try:
+        q = db.collection("retailer_items").where("store_id", "==", store_id)
+        items = [doc.to_dict() for doc in q.stream()]
+        return items
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 # ----------------------------
 # Scan item QR (awards points + updates item)
 # ----------------------------
@@ -306,5 +356,13 @@ def delete_retail_profile(store_id: str, logged_in_uid: str = Depends(verify_tok
         raise HTTPException(status_code=404, detail="Retail profile not found")
     doc_ref.delete()
     return {"message": f"Retail profile {store_id} deleted successfully"}
+
+@router.get("/profile/{store_id}")
+def get_retail_profile(store_id: str):
+    doc_ref = db.collection("retail_profiles").document(store_id)
+    doc = doc_ref.get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="Retail profile not found")
+    return doc.to_dict()
 
 

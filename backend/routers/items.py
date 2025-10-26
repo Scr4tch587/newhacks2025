@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Query, UploadFile, File, HTTPException, Form, Depends
 from models.item import Item
+from models.business import BusinessTransaction
 from routers.login import verify_token
 from db.firestore_client import db
 from typing import List, Dict, Any, Optional
@@ -43,24 +44,50 @@ def _geocode_address(address: str) -> Optional[Dict[str, float]]:
         return None
 
 
+def _exists_by_id_or_email(collection: str, identifier: str) -> bool:
+    """Return True if a document exists in the collection either with the given
+    document id or where the field 'email' equals the identifier.
+    """
+    try:
+        # Try direct document id
+        if db.collection(collection).document(identifier).get().exists:
+            return True
+        # Try query by email field
+        try:
+            matches = list(db.collection(collection).where("email", "==", identifier).limit(1).stream())
+            return len(matches) > 0
+        except Exception:
+            return False
+    except Exception:
+        return False
+
 @router.post("/cloudinary")
+@router.post("/cloudinary/")
+@router.post("/create")
+@router.post("/create/")
 async def create_item(
     name: str = Form(...),
     description: str = Form(...),
     owner_email: str = Form(...),
-    file: Optional[UploadFile] = File(None)
+    file: Optional[UploadFile] = File(None),
+    qr_code_id: Optional[str] = Form(None),
+    donor_uid: Optional[str] = Form(None),
+    donor_email: Optional[str] = Form(None),
+    date: Optional[str] = Form(None),
+    time: Optional[str] = Form(None),
 ):
     """
     Creates an item and uploads image to Cloudinary (if provided).
     Returns QR code + item info.
     """
 
-    # ✅ Verify owner (tourist or business)
-    owner_doc = db.collection("tourists").document(owner_email).get()
-    if not owner_doc.exists:
-        owner_doc = db.collection("businesses").document(owner_email).get()
-        if not owner_doc.exists:
-            raise HTTPException(status_code=404, detail="Owner not found")
+    # ✅ Verify owner (tourist or business) by id or by email field
+    owner_ok = _exists_by_id_or_email("tourists", owner_email) or _exists_by_id_or_email("businesses", owner_email)
+    if not owner_ok:
+        # Some deployments may also use retailers; include as a fallback
+        owner_ok = _exists_by_id_or_email("retailers", owner_email)
+    if not owner_ok:
+        raise HTTPException(status_code=404, detail="Owner not found")
 
     # ✅ Upload image to Cloudinary (if provided)
     image_url = None
@@ -76,8 +103,14 @@ async def create_item(
             print("Cloudinary upload failed:", e)
             raise HTTPException(status_code=400, detail=str(e) if isinstance(e, RuntimeError) else "Image upload failed")
 
-    # ✅ Generate QR code ID
-    qr_code_id = str(uuid.uuid4())
+    # ✅ Determine QR code ID (allow override from client to align with scanned QR)
+    if qr_code_id:
+        provided_id = str(qr_code_id).strip()
+        # If a document with this id already exists in items collection, we will update that doc
+        # to avoid duplicate IDs across collections, else we'll create a new doc with this ID.
+        qr_code_id = provided_id
+    else:
+        qr_code_id = str(uuid.uuid4())
 
     # ✅ Create Firestore item
     item_data = {
@@ -85,17 +118,69 @@ async def create_item(
         "description": description,
         "qr_code_id": qr_code_id,
         "owner_email": owner_email,
-        "status": "available",
+        # When a donation is submitted, the listing should be initially unavailable
+        "status": "unavailable",
         "image_url": image_url,
         "created_by": "user"
     }
     db.collection("items").document(qr_code_id).set(item_data)
 
+    # ✅ Award points to donor (if provided)
+    try:
+        donor_identifier = (donor_uid or donor_email)
+        if donor_identifier:
+            # Try by document id (uid or email)
+            t_ref = db.collection("tourists").document(donor_identifier)
+            t_doc = t_ref.get()
+            if not t_doc.exists and donor_email:
+                # Fallback: query by email field
+                q = db.collection("tourists").where("email", "==", donor_email).limit(1)
+                matches = list(q.stream())
+                if matches:
+                    t_ref = db.collection("tourists").document(matches[0].id)
+                    t_doc = matches[0]
+
+            if t_doc.exists:
+                t_data = t_doc.to_dict() or {}
+                current = int(t_data.get("points", 0) or 0)
+                t_ref.update({"points": current + 20})
+    except Exception as e:
+        # Log but don't fail donation on points award issues
+        print("Award points failed:", e)
+
+    # ✅ Create a BusinessTransaction (Dropoff) under the business doc
+    try:
+        # Resolve business document by id or email field
+        biz_ref = db.collection("businesses").document(owner_email)
+        biz_doc = biz_ref.get()
+        if not biz_doc.exists:
+            matches = list(db.collection("businesses").where("email", "==", owner_email).limit(1).stream())
+            if matches:
+                biz_ref = db.collection("businesses").document(matches[0].id)
+                biz_doc = matches[0]
+
+        if biz_doc and biz_doc.exists:
+            biz = biz_doc.to_dict() or {}
+            business_name = (biz.get("name") or biz.get("business_name") or biz.get("email") or "").strip()
+            tx = BusinessTransaction(
+                name=business_name or owner_email,
+                item_name=name,
+                qr_code_id=qr_code_id,
+                date=str(date or ""),
+                time=str(time or ""),
+                transaction_type="Dropoff",
+            )
+            biz_ref.collection("transactions").document().set(tx.model_dump())
+    except Exception as e:
+        print("Create transaction failed:", e)
+
     # ✅ Generate QR code image
     try:
+        import json
         qr_payload = {"qr_code_id": qr_code_id, "owner_email": owner_email}
         qr = qrcode.QRCode(version=1, box_size=10, border=5)
-        qr.add_data(qr_payload)
+        # Ensure QR encodes valid JSON
+        qr.add_data(json.dumps(qr_payload))
         qr.make(fit=True)
         img = qr.make_image(fill_color="black", back_color="white")
 
@@ -141,12 +226,13 @@ def items_nearby(
         owner_email = raw.get("owner_email")
         if not owner_email:
             continue
-
-        # Owner must be a business with an address to compute location
-        owner_doc = db.collection("businesses").document(owner_email).get()
-        if not owner_doc.exists:
+        
+        owner_query = db.collection("businesses").where("email", "==", owner_email).limit(1).stream()
+        owner_doc = next(owner_query, None)
+        if not owner_doc:
             continue
         owner = owner_doc.to_dict() or {}
+        # Owner must be a business with an address to compute location
         addr = owner.get("address")
         if not addr:
             continue

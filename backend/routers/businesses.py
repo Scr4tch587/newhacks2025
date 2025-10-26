@@ -219,10 +219,11 @@ def delete_business(uid: str, logged_in_uid: str = Depends(verify_token)):
 
 # Add a transaction for a business (pickup/dropoff scheduled at the business location)
 @router.post("/transactions", status_code=status.HTTP_201_CREATED)
-def add_business_transaction(transaction: BusinessTransaction, identifier: str = Query(..., description="Business identifier (doc id, uid or email)")):
-    """
-    Create a new business transaction record under the business document.
-    Request body should match models.business.BusinessTransaction.
+def add_business_transaction(payload: Dict[str, Any], identifier: str = Query(..., description="Business identifier (doc id, uid or email)")):
+    """Create a new business transaction record under the business document.
+
+    Accepts a flexible payload from the client (e.g., { transaction_type, date, time, item_id }),
+    then normalizes and persists a BusinessTransaction (name, item_name, qr_code_id, date, time, transaction_type).
     """
     # Ensure business exists (resolve tolerant identifier)
     doc_ref = _resolve_business_doc_ref(identifier)
@@ -233,64 +234,86 @@ def add_business_transaction(transaction: BusinessTransaction, identifier: str =
     try:
         coll = doc_ref.collection("transactions")
         tx_ref = coll.document()  # auto-generated id
-        data = transaction.model_dump() if hasattr(transaction, "model_dump") else dict(transaction)
 
-        # Force the transaction "name" to be the selected business's name
+        # Resolve business name
         try:
             biz_doc = doc_ref.get()
             biz = biz_doc.to_dict() if biz_doc and biz_doc.exists else {}
             business_name = (biz.get("name") or biz.get("business_name") or biz.get("email") or "").strip()
-            if business_name:
-                data["name"] = business_name
         except Exception:
-            # If we can't resolve a business name, leave whatever caller sent
+            business_name = ""
+
+        # Normalize incoming payload
+        qr_id = payload.get("qr_code_id") or payload.get("item_id") or payload.get("id") or ""
+        # Try to get item name from items collection
+        item_name = str(payload.get("item_name") or "").strip()
+        try:
+            if qr_id and not item_name:
+                i_doc = db.collection("items").document(qr_id).get()
+                if i_doc.exists:
+                    item_name = (i_doc.to_dict() or {}).get("name") or item_name
+        except Exception:
             pass
 
-        # Normalize and validate transaction_type
-        tx_type = data.get("transaction_type")
-        if tx_type:
-            tx_type_clean = str(tx_type).strip().lower()
-            if tx_type_clean not in ("pickup", "dropoff"):
-                raise HTTPException(status_code=400, detail="transaction_type must be 'Pickup' or 'Dropoff'")
-            data["transaction_type"] = tx_type_clean.title()
+        tx_type_raw = payload.get("transaction_type") or "Pickup"
+        tx_type_clean = str(tx_type_raw).strip().lower()
+        if tx_type_clean not in ("pickup", "dropoff"):
+            raise HTTPException(status_code=400, detail="transaction_type must be 'Pickup' or 'Dropoff'")
+
+        # Construct a BusinessTransaction object to ensure schema
+        tx_obj = BusinessTransaction(
+            name=business_name or "",
+            item_name=item_name or "",
+            qr_code_id=str(qr_id or ""),
+            date=str(payload.get("date") or ""),
+            time=str(payload.get("time") or ""),
+            transaction_type=tx_type_clean.title(),
+        )
+
+        data = tx_obj.model_dump()
 
         # If date and time are provided, try to build an ISO scheduled_time
         date_str = data.get("date")
         time_str = data.get("time")
         if date_str and time_str:
             try:
-                # Accept common formats like 'YYYY-MM-DD' and 'HH:MM' (24h)
-                dt = None
                 combined = f"{date_str} {time_str}"
                 try:
                     dt = datetime.fromisoformat(f"{date_str}T{time_str}")
                 except Exception:
-                    # Fallback to parsing common format
                     dt = datetime.strptime(combined, "%Y-%m-%d %H:%M")
-                # Store as ISO (assume input is local/naive — append Z to indicate UTC if you prefer)
                 data["scheduled_time"] = dt.isoformat()
             except Exception:
-                # If parsing fails, leave date/time as-is but do not block creation
                 data["scheduled_time"] = None
 
-        # Attach server-side timestamp
         data["created_at"] = datetime.utcnow().isoformat() + "Z"
-
-        # Record who created the transaction if available from request headers
-        try:
-            # If callers include Authorization header processing elsewhere, that
-            # can populate created_by fields. Here, we defensively attempt to
-            # use request headers if present (no verification performed).
-            # NOTE: this is intentionally lightweight since endpoint is unauthenticated.
-            from fastapi import Request
-            # Try to access the current request via dependency injection fallback
-            # This is optional and best-effort; if unavailable we simply skip.
-            # (In production you'd prefer verified tokens.)
-            req = None
-        except Exception:
-            req = None
         tx_ref.set(data)
         return {"message": "Transaction created", "id": tx_ref.id, "transaction": data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/transactions/{transaction_id}")
+def delete_business_transaction(
+    transaction_id: str,
+    identifier: str = Query(..., description="Business identifier (doc id, uid or email)"),
+    uid: str = Depends(verify_token),
+):
+    """Delete a business transaction by id under the resolved business document.
+
+    Requires a verified Firebase ID token.
+    """
+    doc_ref = _resolve_business_doc_ref(identifier)
+    if not doc_ref:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    try:
+        tx_ref = doc_ref.collection("transactions").document(transaction_id)
+        if not tx_ref.get().exists:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+        tx_ref.delete()
+        return {"message": "Transaction deleted", "id": transaction_id}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
