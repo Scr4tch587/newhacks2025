@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from models.tourist import Tourist
 from models.tourist import TouristCreate
+from routers.login import verify_token
 from db.firestore_client import db
 from db.firestore_auth import auth
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -82,4 +83,14 @@ def get_tourist(uid: str):
     if not doc.exists:
         raise HTTPException(status_code=404, detail="Tourist not found")
     return doc.to_dict()
+
+
+
+@router.get("/check-login")
+def check_login(uid: str = Depends(verify_token)):
+    """
+    Simple endpoint to check if the user is logged in.
+    Returns user UID if token is valid.
+    """
+    return {"logged_in": True, "uid": uid}
 
