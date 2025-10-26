@@ -2,6 +2,10 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { signOutUser } from '../utils/FirebaseAuth'
 
+// Import logo + airplane
+import logo from '../images/logo.png'
+import airplane from '../images/airplane.png' // replace with your airplane svg/png
+
 export default function Navbar() {
   const { user, role } = useAuth()
   const navigate = useNavigate()
@@ -16,18 +20,34 @@ export default function Navbar() {
   }
 
   return (
-    <nav className="w-full bg-white/80 backdrop-blur border-b border-gray-200 sticky top-0 z-50">
+    <nav className="relative w-full bg-white/80 backdrop-blur border-b border-gray-200 sticky top-0 z-50 overflow-hidden">
+      {/* Paper Airplane Animation */}
+      <div className="airplane-wrapper absolute top-6 left-0 h-6 w-6">
+  {/* Airplane itself */}
+  <img
+    src={airplane}
+    alt="Airplane"
+    className="h-6 w-6 animate-airplane-sine"
+  />
+  {/* Dashed fading trail */}
+  <div className="airplane-trail"></div>
+</div>
+
+
       <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-  <Link to="/" className="text-xl font-semibold">Waypost</Link>
+        {/* Logo + Brand */}
+        <Link to="/" className="flex items-center gap-2">
+          <img src={logo} alt="Waypost Logo" className="h-12 w-12 object-contain" />
+          <span className="text-xl font-semibold">Waypost</span>
+        </Link>
+
+        {/* Navigation Links */}
         <div className="flex items-center gap-4">
           {role === 'business' ? (
-            // Business users: only Business Dashboard
             <Link to="/business-dashboard" className="text-gray-700 hover:text-black">Business Dashboard</Link>
           ) : role === 'retailer' ? (
-            // Retailers: only Retail Dashboard
             <Link to="/retail-dashboard" className="text-gray-700 hover:text-black">Retail Dashboard</Link>
           ) : (
-            // Tourists and unknown roles: show Dashboard/Points, and Donate for tourists
             <>
               <Link to="/dashboard" className="text-gray-700 hover:text-black">Dashboard</Link>
               <Link to="/points" className="text-gray-700 hover:text-black">Points</Link>
@@ -45,7 +65,6 @@ export default function Navbar() {
             <Link to="/login" className="px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-700">
               Login
             </Link>
-
           )}
         </div>
       </div>
