@@ -18,7 +18,6 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     r = 6371
     return r * c
 
-
 _geocoder = Nominatim(user_agent="newhacks2025-backend")
 
 
@@ -43,32 +42,25 @@ def list_items():
 
 
 @router.get("/nearby")
-def items_nearby(address: Optional[str] = Query(None, description="Address to compute proximity"), lat: Optional[float] = Query(None), lng: Optional[float] = Query(None), limit: int = Query(20, ge=1, le=100)) -> List[Dict[str, Any]]:
+def items_nearby(lat: float = Query(..., description="Origin latitude"), lng: float = Query(..., description="Origin longitude"), limit: int = Query(20, ge=1, le=100)) -> List[Dict[str, Any]]:
     """
-    Return items whose owners are businesses with known addresses, sorted by distance to the given address or coordinates.
-    Either provide `lat` and `lng`, or `address` (string) to geocode.
-    Response items include qr_code_id as `id`, name, description, owner_email, address, lat, lng, distance_km.
+    Return items whose owners are businesses with known addresses, sorted by distance to the given coordinates.
+    Provide `lat` and `lng` for the origin. Response items include qr_code_id as `id`, name, description,
+    owner_email, address, lat, lng, distance_km.
     """
-    origin = None
-    if lat is not None and lng is not None:
-        origin = {"lat": float(lat), "lng": float(lng)}
-    elif address:
-        origin = _geocode_address(address)
+    origin = {"lat": float(lat), "lng": float(lng)}
 
-    if not origin:
-        return []
-
-    results: List[Dict[str, Any]] = []
+    # Collect tuples of (distance, original_item_dict) so we can sort by proximity
+    distance_items: List[tuple[float, Dict[str, Any]]] = []
     for doc in db.collection("items").stream():
         item = doc.to_dict()
         owner_email = item.get("owner_email")
         if not owner_email:
             continue
 
-        # Try to fetch owner business document
+        # Owner must be a business with an address to compute location
         owner_doc = db.collection("businesses").document(owner_email).get()
         if not owner_doc.exists:
-            # Skip items whose owners are not businesses or have no address
             continue
         owner = owner_doc.to_dict()
         addr = owner.get("address")
@@ -77,23 +69,16 @@ def items_nearby(address: Optional[str] = Query(None, description="Address to co
 
         coords = _geocode_address(addr)
         if not coords:
+            # Skip owners we cannot geocode
             continue
 
         dist_km = _haversine_km(origin["lat"], origin["lng"], coords["lat"], coords["lng"])
+        distance_items.append((dist_km, item))
 
-        results.append({
-            "id": item.get("qr_code_id") or doc.id,
-            "name": item.get("name"),
-            "description": item.get("description"),
-            "owner_email": owner_email,
-            "address": addr,
-            "lat": coords["lat"],
-            "lng": coords["lng"],
-            "distance_km": round(dist_km, 2),
-        })
-
-    results.sort(key=lambda x: x["distance_km"])
-    return results[:limit]
+    # Sort by distance and return the original item dicts for the closest `limit` items
+    distance_items.sort(key=lambda x: x[0])
+    closest = [itm for _, itm in distance_items[:limit]]
+    return closest
 
 @router.get("/{qr_code_id}")
 def get_item(qr_code_id: str):
