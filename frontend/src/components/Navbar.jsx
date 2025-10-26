@@ -52,7 +52,7 @@ export default function Navbar() {
               <Link to="/dashboard" className="text-gray-700 hover:text-black">Dashboard</Link>
               <Link to="/points" className="text-gray-700 hover:text-black">Points</Link>
               {role === 'tourist' && (
-                <Link to="/donate" className="text-gray-700 hover:text-black">Donate Item</Link>
+                <Link to="/donate" className="text-gray-700 hover:text-black">Donate</Link>
               )}
             </>
           )}

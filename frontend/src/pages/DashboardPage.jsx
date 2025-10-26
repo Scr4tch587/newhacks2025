@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import MapComponent from '../components/MapComponent'
 import MapSidebar from '../components/MapSidebar'
 import ListingDetailModal from '../components/ListingDetailModal'
+import PickUpModal from '../components/PickUpModal'
 import { getNearbyItems } from '../utils/FastAPIClient'
 import Footsteps from "../components/Footsteps";
 
@@ -18,6 +19,7 @@ const FRAME_OVERLAP_PX = 20; // How far you want the frame to "pop out" past the
 export default function DashboardPage() {
   const [listings, setListings] = useState([])
   const [selected, setSelected] = useState(null)
+  const [pickupFor, setPickupFor] = useState(null)
   const [origin, setOrigin] = useState({ lat: 43.653, lng: -79.383 })
   const [scrollY, setScrollY] = useState(0)
   const navigate = useNavigate()
@@ -59,16 +61,27 @@ export default function DashboardPage() {
 
       try {
         const items = await getNearbyItems({ lat: originLoc.lat, lng: originLoc.lng, limit: 100 })
-        const mapped = (items || []).map((it) => ({
-          id: it.id,
-          qr_code_id: it.id,
-          name: it.name,
-          title: it.name,
-          description: it.description,
-          lat: it.lat,
-          lng: it.lng,
-          distanceKm: it.distance_km != null ? it.distance_km : (it.distanceKm ?? haversineKm(originLoc.lat, originLoc.lng, it.lat, it.lng)),
-        }))
+        const mapped = (items || []).map((it) => {
+          const id = it.id || it.qr_code_id
+          const hasCoords = (typeof it.lat === 'number') && (typeof it.lng === 'number')
+          const distanceKm = (typeof it.distance_km === 'number')
+            ? it.distance_km
+            : (hasCoords ? haversineKm(originLoc.lat, originLoc.lng, it.lat, it.lng) : null)
+          return {
+            id,
+            qr_code_id: it.qr_code_id || id,
+            name: it.name,
+            title: it.name,
+            description: it.description,
+            image_url: it.image_url || it.image_link || null,
+            lat: it.lat,
+            lng: it.lng,
+            owner_name: it.owner_name || null,
+            owner_email: it.owner_email || null,
+            owner_address: it.owner_address || it.address || null,
+            distanceKm,
+          }
+        })
         setListings(mapped)
         setOrigin(originLoc)
       } catch (e) {
@@ -94,16 +107,8 @@ export default function DashboardPage() {
 
       {/* === MAIN DASHBOARD CONTENT === */}
       <div className="relative z-30 max-w-6xl mx-auto p-4 space-y-4">
-        <div className="flex justify-between items-center">
-          <h1 className="text-xl font-semibold text-white drop-shadow-md">Nearby Listings</h1>
-          <button
-  className="px-4 py-2 rounded bg-[#D2B48C] text-white hover:bg-[#C19A6B]"
-  onClick={() => navigate('/donate')}
->
-  Donate Item
-</button>
-
-        </div>
+        {/* Spacer above the framed map */}
+        <div className="h-8" />
 
         {/* === MAP WITH WOOD FRAME === */}
         <div
@@ -137,7 +142,23 @@ export default function DashboardPage() {
           isOpen={!!selected}
           listing={selected}
           onClose={() => setSelected(null)}
-          onDonate={() => navigate('/donate')}
+          onDonate={(listing) => { setPickupFor(listing); setSelected(null) }}
+        />
+
+        <PickUpModal
+          open={!!pickupFor}
+          listing={pickupFor}
+          onClose={(didSchedule) => {
+            setPickupFor(null)
+            if (didSchedule) {
+              // Optimistically mark the item unavailable in local state
+              setListings((prev) => prev.map(it => (
+                (it.id === pickupFor?.id || it.qr_code_id === pickupFor?.qr_code_id)
+                  ? { ...it, status: 'unavailable' }
+                  : it
+              )))
+            }
+          }}
         />
       </div>
 

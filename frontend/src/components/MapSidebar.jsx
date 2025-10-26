@@ -11,7 +11,7 @@ export default function MapSidebar({ listings = [], onSelectListing }) {
     >
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200">
-        {!isCollapsed && <h2 className="text-lg font-semibold text-gray-800">Listings</h2>}
+        {!isCollapsed && <h2 className="text-2xl font-bold text-gray-800">Listings</h2>}
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
           className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
