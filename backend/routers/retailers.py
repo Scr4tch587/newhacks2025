@@ -179,3 +179,36 @@ def scan_item_qr(qr_code_id: str, scanner_email: str):
     db.collection("items").document(qr_code_id).update({"owner_email": scanner_email, "status": "unavailable"})
 
     return {"message": "Points awarded", "scanner_points": scanner_points}
+
+
+@router.post("/create_retail_profile")
+def create_retail_profile(
+    retailer_email: str,
+    store_name: str,
+    description: str,
+    address: str,
+    image: UploadFile = File(None)
+):
+    # Check retailer exists
+    retailer_doc = db.collection("retailers").document(retailer_email).get()
+    if not retailer_doc.exists:
+        raise HTTPException(status_code=404, detail="Retailer not found")
+
+    # Upload optional store image
+    image_url = None
+    if image:
+        image_url = upload_file(image)  # Using your Cloudinary uploader
+
+    # Create store profile
+    store_id = str(uuid.uuid4())
+    db.collection("retail_profiles").document(store_id).set({
+        "store_id": store_id,
+        "retailer_email": retailer_email,
+        "store_name": store_name,
+        "description": description,
+        "address": address,
+        "image_url": image_url,
+        "points": 0
+    })
+
+    return {"message": "Retail profile created successfully", "store_id": store_id}
