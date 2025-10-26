@@ -17,7 +17,8 @@ cloudinary.config(
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import tourists, businesses, items
+from routers import tourists, businesses, items, retailers
+
 
 app = FastAPI(title="NewHacks2025 Backend")
 
@@ -25,6 +26,7 @@ app = FastAPI(title="NewHacks2025 Backend")
 app.include_router(tourists.router)
 app.include_router(businesses.router)
 app.include_router(items.router)
+app.include_router(retailers.router)
 
 origins = [
     "http://localhost:5173",  # your frontend origin
@@ -40,6 +42,8 @@ app.add_middleware(
 )
 
 
+
 @app.get("/")
 def root():
     return {"message": "Welcome to the NewHacks2025 Backend!"}
+
