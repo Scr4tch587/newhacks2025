@@ -4,7 +4,7 @@
 // VITE_FIREBASE_APP_ID, VITE_FIREBASE_MESSAGING_SENDER_ID
 
 import { initializeApp } from 'firebase/app'
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -29,6 +29,25 @@ export async function signInWithGoogle() {
   const provider = new GoogleAuthProvider()
   const result = await signInWithPopup(getFirebaseAuth(), provider)
   return result.user
+}
+
+export async function signUpWithEmail(email, password) {
+  const auth = getFirebaseAuth()
+  const userCred = await createUserWithEmailAndPassword(auth, email, password)
+  return userCred.user
+}
+
+export async function signInWithEmail(email, password) {
+  const auth = getFirebaseAuth()
+  const userCred = await signInWithEmailAndPassword(auth, email, password)
+  return userCred.user
+}
+
+export async function getIdToken() {
+  const auth = getFirebaseAuth()
+  const user = auth.currentUser
+  if (!user) return null
+  return await user.getIdToken(/* forceRefresh */ false)
 }
 
 export async function signOutUser() {

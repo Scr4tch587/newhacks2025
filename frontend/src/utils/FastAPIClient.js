@@ -45,4 +45,15 @@ export async function getNearbyItems({ address, lat, lng, limit = 50 } = {}) {
   return data
 }
 
+export async function registerTourist(payload) {
+  const { data } = await api.post('/tourists/register', payload)
+  return data
+}
+
+export async function getProfileWithToken(idToken) {
+  if (!idToken) return null
+  const { data } = await api.get('/login/profile', { headers: { Authorization: `Bearer ${idToken}` } })
+  return data
+}
+
 export default api
