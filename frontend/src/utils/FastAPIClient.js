@@ -133,3 +133,17 @@ export async function createRetailProfile({ name, description, file }, idToken) 
 }
 
 export default api
+
+export async function createItem(form) {
+  const formData = new FormData();
+  formData.append("name", form.name);
+  formData.append("description", form.description);
+  formData.append("retailer_email", form.retailer_email);
+  if (form.image) formData.append("file", form.image);
+
+  const { data } = await api.post("/retailers/create_item", formData, {
+    headers: { "Content-Type": "multipart/form-data" }
+  });
+
+  return data;
+}

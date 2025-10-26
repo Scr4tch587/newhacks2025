@@ -8,7 +8,7 @@ import PointsPage from './pages/PointsPage'
 import DonateItemPage from './pages/DonateItemPage'
 import SignupPage from './pages/SignupPage'
 import HomePage from './pages/HomePage'
-
+import CreateItemPage from './pages/CreateItemPage' //retailer
 
 function App() {
   return (
@@ -23,6 +23,7 @@ function App() {
         <Route path="/donate" element={<DonateItemPage />} />
   <Route path="/signup" element={<SignupPage />} />
   <Route path="/" element={<HomePage />} />
+        <Route path="/create-item/:storeId" element={<CreateItemPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </div>

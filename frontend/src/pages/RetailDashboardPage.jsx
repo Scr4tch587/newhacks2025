@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { getRetailProfilesByEmail, createRetailProfile } from '../utils/FastAPIClient'
+import { useNavigate } from 'react-router-dom'
+
 
 export default function RetailDashboardPage() {
   const { user, role, profile, loading, getIdToken } = useAuth()
@@ -8,7 +10,10 @@ export default function RetailDashboardPage() {
   const [form, setForm] = useState({ name: '', description: '', image: null })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
+  const [message, setMessage] = useState(null)
+  const navigate = useNavigate()
 
+  
   const email = profile?.email || user?.email || null
 
   useEffect(() => {
@@ -64,6 +69,12 @@ export default function RetailDashboardPage() {
     }
   }
 
+  const handleProfileClick = (profile) => {
+    const storeId = profile.store_id || profile.id
+    console.log("Navigating to create item for store:", storeId)
+    navigate(`/create-item/${storeId}`) 
+  }
+
   if (loading) return <div className="max-w-5xl mx-auto p-4">Loading…</div>
   if (role !== 'retailer') return (
     <div className="max-w-5xl mx-auto p-4">
@@ -83,7 +94,10 @@ export default function RetailDashboardPage() {
         ) : (
           <ul className="divide-y border rounded bg-white">
             {profiles.map((p) => (
-              <li key={p.store_id || p.id} className="p-4 flex items-start gap-4">
+              <li 
+                key={p.store_id || p.id}
+                onClick={() => handleProfileClick(p)}
+                className="p-4 flex items-start gap-4 hover:bg-gray-50 cursor-pointer transition">
                 {p.image_url ? (
                   <img src={p.image_url} alt={p.name} className="w-16 h-16 object-cover rounded" />
                 ) : (
