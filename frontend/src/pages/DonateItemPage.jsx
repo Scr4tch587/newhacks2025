@@ -1,21 +1,104 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Html5QrcodeScanner } from 'html5-qrcode'
+import { Html5Qrcode } from 'html5-qrcode'
 import { fetchProductByQRCode, getAvailableTimeSlots, getAvailableDates } from '../utils/DonationAPI'
-import { getNearbyBusinesses, api } from '../utils/FastAPIClient'
-import { useAuth } from '../contexts/AuthContext'
+import { getNearbyBusinesses } from '../utils/FastAPIClient'
+import passportBg from "../images/passportbackground.jpg"  // 👈 background import
 
+// --- HELPER COMPONENT ---
+const PassportField = ({ label, value, isPlaceholder = false }) => (
+  <div>
+    <p className="text-xs text-red-900 opacity-75 uppercase leading-none">{label}</p>
+    <p className={`font-semibold tracking-wide ${isPlaceholder ? 'text-gray-500 italic' : 'text-gray-800'}`}>
+      {value}
+    </p>
+  </div>
+)
+
+// --- QR SCANNER COMPONENT ---
+const QrCodeScannerComponent = ({ onScanSuccess }) => {
+  const html5QrCodeRef = useRef(null)
+  const [cameras, setCameras] = useState([])
+  const [selectedDeviceId, setSelectedDeviceId] = useState(null)
+  const qrboxSize = 200
+
+  useEffect(() => {
+    Html5Qrcode.getCameras().then(devices => {
+      if (devices && devices.length) {
+        setCameras(devices)
+        const environmentCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('environment'))
+        setSelectedDeviceId(environmentCamera ? environmentCamera.id : devices[0].id)
+      }
+    }).catch(err => {
+      console.error("Error getting cameras:", err)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!selectedDeviceId || html5QrCodeRef.current) return
+
+    const html5QrCode = new Html5Qrcode("qr-reader")
+    html5QrCodeRef.current = html5QrCode
+
+    const config = {
+      fps: 10,
+      qrbox: { width: qrboxSize, height: qrboxSize },
+      aspectRatio: 1.0,
+      facingMode: 'environment'
+    }
+
+    html5QrCode.start(
+      selectedDeviceId,
+      config,
+      onScanSuccess,
+      () => {}
+    ).catch((err) => {
+      console.error(`Failed to start scanning with device ${selectedDeviceId}.`, err)
+    })
+
+    return () => {
+      if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
+        html5QrCodeRef.current.stop().catch(err => {
+          console.warn("Html5Qrcode stop failed:", err)
+        })
+      }
+      html5QrCodeRef.current = null
+    }
+  }, [selectedDeviceId, onScanSuccess])
+
+  return (
+    <div id="qr-reader" className="w-full h-full flex justify-center items-center">
+      {!selectedDeviceId && cameras.length === 0 && (
+        <div className="text-gray-500 italic text-center p-4">
+          Waiting for camera permissions...
+        </div>
+      )}
+      {selectedDeviceId && cameras.length > 1 && (
+        <select
+          className="absolute top-0 z-50 text-xs p-1 bg-white border rounded"
+          value={selectedDeviceId}
+          onChange={(e) => {
+            html5QrCodeRef.current?.stop().then(() => {
+              html5QrCodeRef.current = null
+              setSelectedDeviceId(e.target.value)
+            })
+          }}
+        >
+          {cameras.map(camera => (
+            <option key={camera.id} value={camera.id}>{camera.label}</option>
+          ))}
+        </select>
+      )}
+    </div>
+  )
+}
+
+// --- MAIN PAGE ---
 export default function DonateItemPage() {
   const navigate = useNavigate()
-
-  // Steps: 'scan' | 'form' | 'success'
   const [step, setStep] = useState('scan')
-
-  // QR scan results
   const [qrCodeId, setQrCodeId] = useState(null)
   const [productInfo, setProductInfo] = useState(null)
-
-  // Form data
   const [form, setForm] = useState({
     description: '',
     photo: null,
@@ -24,7 +107,6 @@ export default function DonateItemPage() {
     timeSlot: ''
   })
 
-  // Options
   const [availableTimeSlots, setAvailableTimeSlots] = useState([])
   const [address, setAddress] = useState('')
   const [selectedAddress, setSelectedAddress] = useState(null)
@@ -32,44 +114,15 @@ export default function DonateItemPage() {
   const [suggestionLoading, setSuggestionLoading] = useState(false)
   const [locations, setLocations] = useState([])
   const [loadingLocations, setLoadingLocations] = useState(false)
-  const [txResult, setTxResult] = useState(null)
   const availableDates = getAvailableDates()
-  const scannerRef = useRef(null)
-  const { user, getIdToken } = useAuth()
 
-  // Optional prompt state (not strictly needed but kept for UX)
-  const [cameraPromptVisible] = useState(false)
+  const handleScanSuccess = useCallback(async (decodedText) => {
+    setQrCodeId(decodedText)
+    const product = await fetchProductByQRCode(decodedText)
+    setProductInfo(product)
+    setStep('form')
+  }, [])
 
-  // Initialize QR scanner
-  useEffect(() => {
-    if (step === 'scan' && !scannerRef.current) {
-      const scanner = new Html5QrcodeScanner(
-        'qr-reader',
-        { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 },
-        false
-      )
-      scanner.render(
-        async (decodedText) => {
-          setQrCodeId(decodedText)
-          const product = await fetchProductByQRCode(decodedText)
-          setProductInfo(product)
-          await scanner.clear()
-          scannerRef.current = null
-          setStep('form')
-        },
-        () => {}
-      )
-      scannerRef.current = scanner
-    }
-    return () => {
-      if (scannerRef.current) {
-        scannerRef.current.clear().catch(() => {})
-        scannerRef.current = null
-      }
-    }
-  }, [step])
-
-  // Load time slots when location changes
   useEffect(() => {
     if (form.dropoffLocation) {
       getAvailableTimeSlots(form.dropoffLocation).then(setAvailableTimeSlots)
@@ -78,9 +131,7 @@ export default function DonateItemPage() {
     }
   }, [form.dropoffLocation])
 
-  // Address autocomplete (Nominatim) and nearby lookup
   useEffect(() => {
-    // when the user types, clear previously selected address
     setSelectedAddress(null)
     if (!address || address.trim().length < 3) {
       setSuggestions([])
@@ -106,13 +157,11 @@ export default function DonateItemPage() {
     return () => clearTimeout(t)
   }, [address])
 
-  // When an address is explicitly selected, load nearby businesses
   useEffect(() => {
     if (!selectedAddress) {
       setLocations([])
       return
     }
-
     let cancelled = false
     ;(async () => {
       try {
@@ -126,48 +175,15 @@ export default function DonateItemPage() {
         if (!cancelled) setLoadingLocations(false)
       }
     })()
-
     return () => { cancelled = true }
   }, [selectedAddress])
-
-
-  // Slightly nicer style for the camera permission button
-  useEffect(() => {
-    if (step !== 'scan') return
-    const style = document.createElement('style')
-    style.innerHTML = `
-      .html5-qrcode-button-camera-permission,
-      button[aria-label*='camera permission'],
-      .html5-qrcode-camera-permission {
-        background: #6366f1 !important;
-        color: #fff !important;
-        font-size: 1.1rem !important;
-        font-weight: 600 !important;
-        border-radius: 0.5rem !important;
-        padding: 0.65rem 1.5rem !important;
-        margin: 1rem auto !important;
-        display: block !important;
-        box-shadow: 0 2px 8px rgba(99,102,241,0.15);
-        border: none !important;
-        cursor: pointer !important;
-      }
-      .html5-qrcode-button-camera-permission:hover,
-      button[aria-label*='camera permission']:hover {
-        background: #4338ca !important;
-      }
-    `
-    document.head.appendChild(style)
-    return () => document.head.removeChild(style)
-  }, [step])
 
   const handleChange = (e) => {
     const { name, value } = e.target
     setForm(f => ({ ...f, [name]: value }))
   }
 
-  const handleAddressChange = (e) => {
-    setAddress(e.target.value)
-  }
+  const handleAddressChange = (e) => setAddress(e.target.value)
 
   const handleSelectSuggestion = (s) => {
     setAddress(s.display_name)
@@ -197,256 +213,222 @@ export default function DonateItemPage() {
       alert('Please select an address from the suggestions before continuing')
       return
     }
-    // Ensure user is logged in
-    if (!user) {
-      alert('You must be logged in to submit a donation')
-      return
-    }
-
-    const userName = user.displayName || user.email || null
-    if (!userName) {
-      alert('Unable to determine user name from account. Please ensure your profile has a display name or email.')
-      return
-    }
-
-    // Build transaction payload — per backend BusinessTransaction model
-    const payload = {
-      name: userName,
-      item_name: productInfo?.productName || form.description.split('\n')[0] || 'Donation',
-      qr_code_id: qrCodeId || '',
-      date: form.date,
-      time: form.timeSlot,
-      transaction_type: 'Dropoff'
-    }
-
-    try {
-      // Retrieve Firebase ID token and include in Authorization header
-      const idToken = await getIdToken()
-      if (!idToken) {
-        alert('You must be logged in to submit a donation')
-        return
-      }
-
-      const resp = await api.post(
-        `/businesses/transactions`,
-        payload,
-        { headers: { Authorization: `Bearer ${idToken}` }, params: { identifier: form.dropoffLocation } }
-      )
-
-      if (resp && (resp.status === 200 || resp.status === 201)) {
-        console.log('Transaction created', resp.data)
-        setTxResult(resp.data)
-        setStep('success')
-      } else {
-        console.error('Unexpected response creating transaction', resp)
-        alert('Donation submitted locally but failed to record a transaction with the business. Please try again.')
-      }
-    } catch (err) {
-      console.error('Failed to create transaction', err)
-      alert('Failed to record donation transaction: ' + (err?.response?.data?.detail || err.message || err))
-    }
-  }
-
-  if (step === 'scan') {
-    return (
-      <div className="max-w-lg mx-auto mt-10 bg-white rounded-lg shadow-xl p-6 space-y-4">
-        <div>
-          <h1 className="text-2xl font-semibold mb-2">Scan Item QR Code</h1>
-          <p className="text-gray-600 text-sm">Position the QR code within the frame to scan</p>
-        </div>
-        {cameraPromptVisible && (
-          <button
-            onClick={() => {}}
-            className="w-full px-4 py-3 rounded-lg bg-indigo-600 text-white font-semibold text-lg mb-4 hover:bg-indigo-700 transition"
-          >
-            Enable Camera
-          </button>
-        )}
-        <div id="qr-reader" className="w-full"></div>
-        <button
-          onClick={() => navigate(-1)}
-          className="w-full px-4 py-2 rounded border hover:bg-gray-50"
-        >
-          Cancel
-        </button>
-      </div>
-    )
-  }
-
-  if (step === 'success') {
-    return (
-      <div className="max-w-lg mx-auto mt-10 bg-white rounded-lg shadow-xl p-6 space-y-4 text-center">
-        <div className="text-5xl">🎉</div>
-        <h1 className="text-2xl font-semibold text-gray-800">Donation Submitted!</h1>
-        <p className="text-gray-700">
-          Thank you for donating <span className="font-semibold text-indigo-600">{productInfo?.productName}</span>.
-        </p>
-
-        {txResult ? (
-          <div className="mt-4 bg-gray-50 border rounded p-4 text-left">
-            <div className="text-sm text-gray-500">Transaction recorded</div>
-            <div className="font-medium mt-1">ID: <span className="font-mono text-sm">{txResult.id}</span></div>
-            {txResult.transaction?.scheduled_time && (
-              <div className="text-sm text-gray-600 mt-1">Scheduled: {new Date(txResult.transaction.scheduled_time).toLocaleString()}</div>
-            )}
-            <div className="mt-2 text-xs text-gray-600">A confirmation was sent to the drop-off location.</div>
-          </div>
-        ) : null}
-
-        <div className="pt-4 flex justify-center gap-2">
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="px-6 py-3 rounded bg-indigo-600 text-white hover:bg-indigo-700 font-medium"
-          >
-            Back to Dashboard
-          </button>
-        </div>
-      </div>
-    )
+    console.log('Submitting donation:', { qrCodeId, productInfo, ...form })
+    setStep('success')
   }
 
   return (
-    <div className="max-w-lg mx-auto mt-10 bg-white rounded-lg shadow-xl p-6 space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold">Donate Your Item</h1>
-        <p className="text-sm text-gray-600 mt-1">
-          Product: <span className="font-medium">{productInfo?.productName}</span>
-          {' '}(ID: {productInfo?.productId})
-        </p>
-      </div>
-
-      <form onSubmit={submit} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium mb-1">Description *</label>
-          <textarea
-            name="description"
-            value={form.description}
-            onChange={handleChange}
-            className="w-full border rounded px-3 py-2 min-h-20"
-            placeholder="Describe the item's condition, any defects, etc."
-            required
-          />
+    <div
+      className="min-h-screen w-full bg-cover bg-center bg-no-repeat flex justify-center items-start p-4"
+      style={{ backgroundImage: `url(${passportBg})` }}   // 👈 background applied
+    >
+      {step === 'scan' && (
+        <div className="max-w-xl mx-auto mt-10 p-4">
+          <div className="relative bg-red-50/70 border border-red-200 rounded-xl shadow-2xl overflow-hidden p-8 space-y-4 max-w-lg mx-auto">
+            <div className="passport-map-bg"></div>
+            <div className="relative z-10">
+              <h2 className="text-3xl font-serif font-bold text-red-800 mb-4 tracking-wider text-center">
+                CIRCULARITY PASSPORT
+              </h2>
+              <div className="flex flex-col md:flex-row gap-6">
+                <div className="flex-shrink-0 w-full md:w-2/5">
+                  <div className="w-full aspect-[3/4] bg-white border border-gray-400 p-1 shadow-inner relative">
+                    <QrCodeScannerComponent onScanSuccess={handleScanSuccess} />
+                    <p className="absolute bottom-0 left-0 right-0 text-center text-xs bg-gray-100 py-0.5 text-gray-700 font-mono">
+                      QR-SCAN-AREA
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="mt-4 w-full px-4 py-3 rounded-lg bg-gray-600 text-white font-semibold text-lg hover:bg-gray-700 transition"
+                  >
+                    If Camera Fails, Try Reloading
+                  </button>
+                </div>
+                <div className="flex-grow md:w-3/5 space-y-2 text-sm">
+                  <PassportField label="DOCUMENT TYPE" value="ITEM DONATION" />
+                  <PassportField label="ITEM ID" value="AA0000000" isPlaceholder={true} />
+                  <h3 className="text-lg font-semibold text-red-700 pt-2 mb-1">SCAN PRODUCT QR CODE</h3>
+                  <PassportField label="PRODUCT NAME" value="Awaiting Scan" isPlaceholder={true} />
+                  <PassportField label="CONDITION" value="Awaiting Scan" isPlaceholder={true} />
+                  <PassportField label="DATE OF SCAN" value={new Date().toLocaleDateString()} />
+                  <PassportField label="EXPIRY/TIMEOUT" value="00-00-0000" isPlaceholder={true} />
+                  <div className="pt-4">
+                    <button
+                      onClick={() => navigate(-1)}
+                      className="w-full px-4 py-2 rounded border border-red-300 text-red-700 hover:bg-red-100 transition"
+                    >
+                      Cancel Donation
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
+      )}
 
-        <div>
-          <label className="block text-sm font-medium mb-1">Photo *</label>
-          <input
-            type="file"
-            accept="image/jpeg,image/jpg,image/png,image/webp"
-            onChange={handlePhotoChange}
-            className="w-full border rounded px-3 py-2"
-            required
-          />
-          {form.photo && (
-            <p className="text-sm text-green-600 mt-1">✓ {form.photo.name}</p>
-          )}
+      {step === 'form' && (
+        <div className="max-w-lg mx-auto mt-10 bg-white rounded-lg shadow-xl p-6 space-y-4">
+          <div>
+            <h1 className="text-2xl font-semibold">Donate Your Item</h1>
+            <p className="text-sm text-gray-600 mt-1">
+              Product: <span className="font-medium">{productInfo?.productName}</span>
+              {' '}(ID: {productInfo?.productId})
+            </p>
+          </div>
+
+          <form onSubmit={submit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Description *</label>
+              <textarea
+                name="description"
+                value={form.description}
+                onChange={handleChange}
+                className="w-full border rounded px-3 py-2 min-h-20"
+                placeholder="Describe the item's condition, any defects, etc."
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Photo *</label>
+              <input
+                type="file"
+                accept="image/jpeg,image/jpg,image/png,image/webp"
+                onChange={handlePhotoChange}
+                className="w-full border rounded px-3 py-2"
+                required
+              />
+              {form.photo && (
+                <p className="text-sm text-green-600 mt-1">✓ {form.photo.name}</p>
+              )}
+            </div>
+
+            <div className="relative">
+              <label className="block text-sm font-medium mb-1">Your Address *</label>
+              <input
+                type="text"
+                value={address}
+                onChange={handleAddressChange}
+                className="w-full border rounded px-3 py-2"
+                placeholder="e.g. 123 Main St, Toronto, ON"
+                aria-autocomplete="list"
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">Select an address from the suggestions to enable nearby drop-off locations.</p>
+              {suggestions.length > 0 && (
+                <ul className="absolute z-20 left-0 right-0 mt-1 bg-white border rounded shadow max-h-48 overflow-auto">
+                  {suggestions.map((s) => (
+                    <li
+                      key={`${s.place_id}`}
+                      onClick={() => handleSelectSuggestion(s)}
+                      className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                    >
+                      {s.display_name}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {suggestionLoading && <div className="text-xs text-gray-500 mt-1">Looking up addresses…</div>}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Drop-off Location *</label>
+              <select
+                name="dropoffLocation"
+                value={form.dropoffLocation}
+                onChange={handleChange}
+                className="w-full border rounded px-3 py-2"
+                disabled={!selectedAddress}
+                required
+              >
+                <option value="">{selectedAddress ? 'Select a location' : 'Select an address first'}</option>
+                {selectedAddress && loadingLocations && <option value="" disabled>Loading nearby locations…</option>}
+                {selectedAddress && !loadingLocations && locations.map(loc => (
+                  <option key={loc.id} value={loc.id}>
+                    {loc.name} - {loc.address} ({loc.distance_km} km)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Drop-off Date *</label>
+              <select
+                name="date"
+                value={form.date}
+                onChange={handleChange}
+                className="w-full border rounded px-3 py-2"
+                required
+              >
+                <option value="">Select a date</option>
+                {availableDates.map(date => (
+                  <option key={date.value} value={date.value}>
+                    {date.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Time Slot *</label>
+              <select
+                name="timeSlot"
+                value={form.timeSlot}
+                onChange={handleChange}
+                className="w-full border rounded px-3 py-2"
+                disabled={!form.dropoffLocation}
+                required
+              >
+                <option value="">
+                  {form.dropoffLocation ? 'Select a time slot' : 'Select location first'}
+                </option>
+                {availableTimeSlots.map((slot, idx) => (
+                  <option key={idx} value={slot}>
+                    {slot}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => navigate(-1)}
+                className="px-4 py-2 rounded border hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700"
+              >
+                Submit Donation
+              </button>
+            </div>
+          </form>
         </div>
+      )}
 
-        <div className="relative">
-          <label className="block text-sm font-medium mb-1">Your Address *</label>
-          <input
-            type="text"
-            value={address}
-            onChange={handleAddressChange}
-            className="w-full border rounded px-3 py-2"
-            placeholder="e.g. 123 Main St, Toronto, ON"
-            aria-autocomplete="list"
-            required
-          />
-          <p className="text-xs text-gray-500 mt-1">Select an address from the suggestions to enable nearby drop-off locations.</p>
-
-          {/* Suggestions dropdown */}
-          {suggestions.length > 0 && (
-            <ul className="absolute z-20 left-0 right-0 mt-1 bg-white border rounded shadow max-h-48 overflow-auto">
-              {suggestions.map((s) => (
-                <li
-                  key={`${s.place_id}`}
-                  onClick={() => handleSelectSuggestion(s)}
-                  className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
-                >
-                  {s.display_name}
-                </li>
-              ))}
-            </ul>
-          )}
-          {suggestionLoading && <div className="text-xs text-gray-500 mt-1">Looking up addresses…</div>}
+      {step === 'success' && (
+        <div className="max-w-lg mx-auto mt-10 bg-white rounded-lg shadow-xl p-8 space-y-4 text-center">
+          <div className="text-6xl mb-4">🎉</div>
+          <h1 className="text-2xl font-semibold text-gray-800">Donation Submitted!</h1>
+          <p className="text-gray-700 text-lg">
+            Thank you for giving your <span className="font-semibold text-indigo-600">'{productInfo?.productName}'</span> a second life!
+            When a new owner is found, points will be awarded to your account!
+          </p>
+          <div className="pt-4">
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="px-6 py-3 rounded bg-indigo-600 text-white hover:bg-indigo-700 font-medium"
+            >
+              Back to Dashboard
+            </button>
+          </div>
         </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-1">Drop-off Location *</label>
-          <select
-            name="dropoffLocation"
-            value={form.dropoffLocation}
-            onChange={handleChange}
-            className="w-full border rounded px-3 py-2"
-            disabled={!selectedAddress}
-            required
-          >
-            <option value="">{selectedAddress ? 'Select a location' : 'Select an address first'}</option>
-            {selectedAddress && loadingLocations && <option value="" disabled>Loading nearby locations…</option>}
-            {selectedAddress && !loadingLocations && locations.map(loc => (
-              <option key={loc.id} value={loc.id}>
-                {loc.name} - {loc.address} ({loc.distance_km} km)
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-1">Drop-off Date *</label>
-          <select
-            name="date"
-            value={form.date}
-            onChange={handleChange}
-            className="w-full border rounded px-3 py-2"
-            required
-          >
-            <option value="">Select a date</option>
-            {availableDates.map(date => (
-              <option key={date.value} value={date.value}>
-                {date.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-1">Time Slot *</label>
-          <select
-            name="timeSlot"
-            value={form.timeSlot}
-            onChange={handleChange}
-            className="w-full border rounded px-3 py-2"
-            disabled={!form.dropoffLocation}
-            required
-          >
-            <option value="">
-              {form.dropoffLocation ? 'Select a time slot' : 'Select location first'}
-            </option>
-            {availableTimeSlots.map((slot, idx) => (
-              <option key={idx} value={slot}>
-                {slot}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex justify-end gap-2 pt-2">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="px-4 py-2 rounded border hover:bg-gray-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700"
-          >
-            Submit Donation
-          </button>
-        </div>
-      </form>
+      )}
     </div>
   )
 }
