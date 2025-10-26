@@ -70,7 +70,7 @@ def register_tourist(tourist: TouristCreate):
             "email": tourist.email,
             "name": tourist.username,
             "uid": user_record.uid,
-            "role": "tourist"
+            "points": 10
         })
         return {"message": "Tourist account created", "uid": user_record.uid}
     except Exception as e:
