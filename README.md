@@ -1,4 +1,4 @@
-# New Hacks 2025 Submission
+# New Hacks 2025 Submission: Waypost
 
 ### The Problem
 
